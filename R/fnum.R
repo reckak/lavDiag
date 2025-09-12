@@ -6,12 +6,8 @@
 #' @param digits Integer ≥ 0: number of decimal places (for non-pvalue case).
 #' @param pvalue Logical: if TRUE, format as p-value, with threshold at 0.001.
 #' @return Character vector of same length as x.
-#' @examples
-#' fnum(1.2345)
-#' fnum(-2.3456, digits = 3)
-#' fnum(c(0.0003, 0.02, 0.5, NA), pvalue = TRUE)
 #' @keywords internal
-fnum <- function(x, digits = 2L, pvalue = FALSE) {
+.fnum <- function(x, digits = 2L, pvalue = FALSE) {
   # argument checking
   if (!is.numeric(x)) stop("`x` must be numeric")
   if (! (is.numeric(digits) && length(digits) == 1 && digits >= 0 && digits == as.integer(digits)) ) {
