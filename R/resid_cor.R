@@ -1,8 +1,6 @@
 if (getRversion() >= "2.15.1") {
   utils::globalVariables(c("v1","v2","v1c","v2c","pair","cor","se","z"))
 }
-
-
 #' Residual correlations (Bentler) as a tidy tibble
 #'
 #' Creates a tidy tibble of residual **correlations** (Bentler type) from a
@@ -45,10 +43,8 @@ if (getRversion() >= "2.15.1") {
 #' @importFrom dplyr bind_rows arrange select
 #' @importFrom rlang .data
 #' @export
-
-
-
 resid_cor <- function(fit) {
+
   is_not_lavaan_fit(fit)
 
   x <- lavaan::lavResiduals(fit, type = "cor.bentler", se = TRUE)
