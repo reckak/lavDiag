@@ -29,7 +29,7 @@
 #' @export
 hopper_plot <- function(fit, title = NULL, n_max = 15, sep = "___") {
   # stop early if not a lavaan fit (internal helper)
-  is_not_lavaan_fit(fit)
+  .assert_lavaan_fit(fit)
 
   residuals <- resid_cor(fit)
 
@@ -41,9 +41,9 @@ hopper_plot <- function(fit, title = NULL, n_max = 15, sep = "___") {
         sign = ifelse(.data$cor < 0, "Negative", "Positive")
       )
 
-    p <- ggplot2::ggplot(df, ggplot2::aes(x = pair, y = abs_cor)) +
+    p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$pair, y = .data$abs_cor)) +
       ggplot2::geom_line(ggplot2::aes(group = 1)) +
-      ggplot2::geom_point(ggplot2::aes(color = sign), size = 5) +
+      ggplot2::geom_point(ggplot2::aes(color = .data$sign), size = 5) +
       ggplot2::labs(
         y = "Absolute residual correlation",
         x = "Variable pair",
@@ -65,9 +65,9 @@ hopper_plot <- function(fit, title = NULL, n_max = 15, sep = "___") {
       sign = ifelse(.data$cor < 0, "Negative", "Positive")
     )
 
-  p <- ggplot2::ggplot(df, ggplot2::aes(x = pair, y = abs_cor)) +
+  p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$pair, y = .data$abs_cor)) +
     ggplot2::geom_line(ggplot2::aes(group = 1)) +
-    ggplot2::geom_point(ggplot2::aes(color = sign), size = 5) +
+    ggplot2::geom_point(ggplot2::aes(color = .data$sign), size = 5) +
     ggplot2::labs(
       y = "Absolute residual correlation",
       x = "Variable pair",

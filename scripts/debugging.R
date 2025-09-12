@@ -31,4 +31,10 @@ resid_cor(fit1)
 
 is_not_lavaan_fit(1L)
 
-hopper_plot(fit3)
+hopper_plot(fit1)
+
+resid_qq(fit1, n = 10)
+
+resid_corrplot(fit2)
+
+model_info(fit2)

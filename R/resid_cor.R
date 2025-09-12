@@ -1,8 +1,3 @@
-if (getRversion() >= "2.15.1") {
-  utils::globalVariables(c("v1","v2","v1c","v2c","pair","cor","se","z"))
-}
-
-
 #' Residual correlations (Bentler) as a tidy tibble
 #'
 #' Creates a tidy tibble of residual **correlations** (Bentler type) from a
@@ -44,12 +39,13 @@ if (getRversion() >= "2.15.1") {
 #' @importFrom dplyr mutate across everything distinct rename relocate filter
 #' @importFrom dplyr bind_rows arrange select
 #' @importFrom rlang .data
+#' @importFrom tidyselect all_of
 #' @export
 
 
 
 resid_cor <- function(fit) {
-  is_not_lavaan_fit(fit)
+  .assert_lavaan_fit(fit)
 
   x <- lavaan::lavResiduals(fit, type = "cor.bentler", se = TRUE)
 
@@ -57,24 +53,38 @@ resid_cor <- function(fit) {
     have_se <- !is.null(lst$cov.se)
     have_z  <- !is.null(lst$cov.z)
 
-    # shodíme třídu lvn.mtr. -> čistý double
+    # zahodíme třídu <lvn.mtr.> -> čistý double
     cov_tbl <- tibble::as_tibble(as.matrix(lst$cov), .name_repair = "minimal") |>
       dplyr::mutate(v1 = colnames(lst$cov))
 
-    long <- tidyr::pivot_longer(cov_tbl, -v1, names_to = "v2", values_to = "cor") |>
+    long <- tidyr::pivot_longer(
+      cov_tbl,
+      cols = -tidyselect::all_of("v1"),
+      names_to = "v2",
+      values_to = "cor"
+    ) |>
       dplyr::mutate(
-        v1c = pmin(.data$v1, .data$v2),
-        v2c = pmax(.data$v1, .data$v2),
+        v1c  = pmin(.data$v1, .data$v2),
+        v2c  = pmax(.data$v1, .data$v2),
         pair = paste0(.data$v1c, "-", .data$v2c)
       ) |>
       dplyr::filter(.data$v1 != .data$v2) |>
       dplyr::distinct(.data$pair, .keep_all = TRUE) |>
-      dplyr::select(v1 = .data$v1c, v2 = .data$v2c, .data$pair, .data$cor)
+      dplyr::transmute(
+        v1   = .data$v1c,
+        v2   = .data$v2c,
+        pair = .data$pair,
+        cor  = .data$cor
+      )
 
     if (have_se) {
       se_tbl <- tibble::as_tibble(as.matrix(lst$cov.se), .name_repair = "minimal") |>
         dplyr::mutate(v1 = colnames(lst$cov.se)) |>
-        tidyr::pivot_longer(-v1, names_to = "v2", values_to = "se") |>
+        tidyr::pivot_longer(
+          cols = -tidyselect::all_of("v1"),
+          names_to = "v2",
+          values_to = "se"
+        ) |>
         dplyr::mutate(
           v1 = pmin(.data$v1, .data$v2),
           v2 = pmax(.data$v1, .data$v2),
@@ -88,7 +98,11 @@ resid_cor <- function(fit) {
     if (have_z) {
       z_tbl <- tibble::as_tibble(as.matrix(lst$cov.z), .name_repair = "minimal") |>
         dplyr::mutate(v1 = colnames(lst$cov.z)) |>
-        tidyr::pivot_longer(-v1, names_to = "v2", values_to = "z") |>
+        tidyr::pivot_longer(
+          cols = -tidyselect::all_of("v1"),
+          names_to = "v2",
+          values_to = "z"
+        ) |>
         dplyr::mutate(
           v1 = pmin(.data$v1, .data$v2),
           v2 = pmax(.data$v1, .data$v2),
@@ -101,7 +115,6 @@ resid_cor <- function(fit) {
 
     long |>
       dplyr::mutate(
-        # jistota: všechny cílové sloupce jako double
         dplyr::across(dplyr::any_of(c("cor", "se", "z")), ~ as.double(.)),
         abs_cor = as.double(abs(.data$cor))
       ) |>
@@ -116,12 +129,14 @@ resid_cor <- function(fit) {
     labs <- tryCatch(lavaan::lavInspect(fit, "group.label"), error = function(e) NULL)
     if (is.null(labs) || length(labs) != ng) labs <- as.character(seq_len(ng))
 
-    lapply(seq_len(ng), function(g) {
+    out <- lapply(seq_len(ng), function(g) {
       tg <- tidy_one(x[[g]])
       tg$group <- labs[g]
       tg
     }) |>
-      dplyr::bind_rows() |>
+      dplyr::bind_rows()
+
+    out |>
       dplyr::arrange(.data$group, dplyr::desc(.data$abs_cor))
   }
 }
