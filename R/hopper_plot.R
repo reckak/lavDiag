@@ -1,3 +1,6 @@
+if (getRversion() >= "2.15.1") {
+  utils::globalVariables(c("abs_cor"))
+}
 #' Hopper plot of the largest residual correlations
 #'
 #' Draws a "hopper" plot of the top-\code{n_max} absolute residual correlations

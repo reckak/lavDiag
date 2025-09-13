@@ -41,9 +41,6 @@
 #' @importFrom rlang .data
 #' @importFrom tidyselect all_of
 #' @export
-
-
-
 resid_cor <- function(fit) {
   .assert_lavaan_fit(fit)
 
