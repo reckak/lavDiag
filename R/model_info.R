@@ -44,6 +44,7 @@ model_info <- function(fit) {
   is_multilevel <- isTRUE(!is.na(n_levels) && n_levels >= 2L) ||
     (!is.null(cluster_var) && length(cluster_var) > 0L)
 
+
   list(
     is_single_group    = is_single_group,
     is_categorical     = is_categorical,

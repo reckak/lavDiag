@@ -11,5 +11,21 @@
 #' @noRd
 #' @keywords internal
 .is_single_group <- function(fit) {
-  length(unique(fit@ParTable$group)) == 1
+  # -- Validate input ----------------------------------------------------------
+  .assert_lavaan_fit(fit)
+
+  # -- Primary: use ngroups from lavInspect (most reliable) --------------------
+  ng <- tryCatch(lavaan::lavInspect(fit, "ngroups"),
+                 error = function(e) NA_integer_)
+
+  if (!is.na(ng)) return(ng <= 1L)
+
+  # -- Fallback: use group labels if ngroups unavailable -----------------------
+  gl <- tryCatch(lavaan::lavInspect(fit, "group.label"),
+                 error = function(e) NULL)
+
+  if (!is.null(gl)) return(length(gl) <= 1L)
+
+  # -- Conservative default: assume single-group if inspection failed ----------
+  TRUE
 }
