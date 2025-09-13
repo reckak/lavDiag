@@ -12,7 +12,7 @@ E =~ E1 + E2 + E3 + E4 + E5 + A5
 
 fit1 <-lavaan::cfa(model = m,
             data = df,
-            missing = "ml",
+            # missing = "ml",
             meanstructure = F)
 
 fit2 <- lavaan::cfa(model = m,
@@ -29,12 +29,16 @@ fit3 <- lavaan::cfa(model = m,
 
 resid_cor(fit1)
 
-is_not_lavaan_fit(1L)
+lavDiag::.is_not_lavaan_fit(1L)
 
 hopper_plot(fit1)
 
-resid_qq(fit1, n = 10)
+resid_qq(fit2, n = 10)
 
 resid_corrplot(fit2)
 
 model_info(fit2)
+
+parameter_estimates(fit2)
+
+plot_cfa(fit1)

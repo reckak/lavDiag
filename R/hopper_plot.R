@@ -33,7 +33,7 @@ hopper_plot <- function(fit, title = NULL, n_max = 15, sep = "___") {
 
   residuals <- resid_cor(fit)
 
-  if (is_single_group(fit)) {
+  if (.is_single_group(fit)) {
     df <- residuals |>
       dplyr::slice_max(.data$abs_cor, n = n_max, with_ties = FALSE) |>
       dplyr::mutate(

@@ -44,7 +44,7 @@ resid_qq <- function(fit, n = 5, title = NULL) {
     }
   }
 
-  if (is_single_group(fit)) {
+  if (.is_single_group(fit)) {
     r2 <- r |>
       dplyr::arrange(.data$z) |>
       dplyr::mutate(

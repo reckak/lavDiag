@@ -13,8 +13,11 @@ Depends:
 Imports:
     lavaan,
     dplyr,
+    purrr,
     tidyr,
     tibble,
+    igraph,
+    visNetwork,
     rlang,
     ggplot2,
     ggrepel,
