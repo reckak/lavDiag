@@ -8,9 +8,10 @@ augment2(
   fit,
   prefix_yhat = ".yhat_",
   prefix_resid = ".resid_",
-  ci = c("none", "delta"),
+  ci = c("delta", "none"),
   level = 0.95,
-  prefix_ci = c(".yhat_lwr_", ".yhat_upr_")
+  prefix_ci = c(".yhat_lwr_", ".yhat_upr_"),
+  vcov_type = NULL
 )
 }
 \arguments{
@@ -25,7 +26,10 @@ using \code{vcov(fit)} and a delta method w.r.t. \eqn{\nu,\Lambda}. Default \cod
 
 \item{level}{Confidence level, default \code{0.95}.}
 
-\item{prefix_ci}{Character vector of length 2 with prefixes for lower/upper CI columns. Default: \code{c(".yhat_lwr_", ".yhat_upr_")}.}
+\item{prefix_ci}{Length-2 character vector with lower/upper CI prefixes. Default \code{c(".yhat_lwr_", ".yhat_upr_")}.}
+
+\item{vcov_type}{Optional character passed to \code{lavaan::vcov(fit, type = vcov_type)}.
+If \code{NULL}, uses the default \code{vcov(fit)}.}
 }
 \value{
 A \code{tibble}. For multi-group models, includes a \code{group}
@@ -40,18 +44,4 @@ indicators and returns a tibble with (a) original factor-score output
 \code{prefix_yhat}, (c) residuals (observed - predicted) prefixed by
 \code{prefix_resid}, and (optionally) (d) Wald-type confidence intervals
 for predicted values via a delta method that treats factor scores as fixed.
-}
-\details{
-CIs are computed as \eqn{\hat y_{ij} \pm z_{\alpha/2} \cdot \mathrm{SE}(\hat y_{ij})},
-where the standard error uses a delta method with gradient
-\eqn{\partial \hat y_{ij} / \partial \nu_j = 1} and
-\eqn{\partial \hat y_{ij} / \partial \lambda_{jk} = \hat\eta_{ik}} for loadings
-on the latent variables of indicator \eqn{j}. The covariance of free parameters
-is taken from \code{vcov(fit)}; fixed parameters contribute zero.
-}
-\examples{
-# fit <- lavaan::cfa('F =~ y1 + y2 + y3', data = dat, meanstructure = TRUE)
-# out <- augment(fit, ci = "delta", level = 0.95)
-# dplyr::select(out, dplyr::starts_with(".yhat_"))
-
 }

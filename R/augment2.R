@@ -13,24 +13,14 @@
 #' @param ci One of \code{c("none","delta")}. If \code{"delta"}, adds Wald CIs
 #'   using \code{vcov(fit)} and a delta method w.r.t. \eqn{\nu,\Lambda}. Default \code{"none"}.
 #' @param level Confidence level, default \code{0.95}.
-#' @param prefix_ci Character vector of length 2 with prefixes for lower/upper CI columns. Default: \code{c(".yhat_lwr_", ".yhat_upr_")}.
+#' @param prefix_ci Length-2 character vector with lower/upper CI prefixes. Default \code{c(".yhat_lwr_", ".yhat_upr_")}.
+#' @param vcov_type Optional character passed to \code{lavaan::vcov(fit, type = vcov_type)}.
+#'   If \code{NULL}, uses the default \code{vcov(fit)}.
+#'
 #' @return A \code{tibble}. For multi-group models, includes a \code{group}
 #'   column with group labels. Predicted/residual columns are added **only**
 #'   for continuous indicators; ordinal indicators are skipped. If \code{ci != "none"},
 #'   lower/upper CI columns are added for each predicted indicator.
-#'
-#' @details
-#' CIs are computed as \eqn{\hat y_{ij} \pm z_{\alpha/2} \cdot \mathrm{SE}(\hat y_{ij})},
-#' where the standard error uses a delta method with gradient
-#' \eqn{\partial \hat y_{ij} / \partial \nu_j = 1} and
-#' \eqn{\partial \hat y_{ij} / \partial \lambda_{jk} = \hat\eta_{ik}} for loadings
-#' on the latent variables of indicator \eqn{j}. The covariance of free parameters
-#' is taken from \code{vcov(fit)}; fixed parameters contribute zero.
-#'
-#' @examples
-#' # fit <- lavaan::cfa('F =~ y1 + y2 + y3', data = dat, meanstructure = TRUE)
-#' # out <- augment(fit, ci = "delta", level = 0.95)
-#' # dplyr::select(out, dplyr::starts_with(".yhat_"))
 #'
 #' @export
 augment2 <- function(fit,
@@ -38,11 +28,12 @@ augment2 <- function(fit,
                      prefix_resid = ".resid_",
                      ci           = c("delta","none"),
                      level        = 0.95,
-                     prefix_ci    = c(".yhat_lwr_", ".yhat_upr_")) {
+                     prefix_ci    = c(".yhat_lwr_", ".yhat_upr_"),
+                     vcov_type    = NULL) {
 
   ci <- match.arg(ci)
 
-  # -- Validate lavaan fit (use the existing helper from functions.txt) -------
+  # -- Validate lavaan fit (use existing helper) -------------------------------
   .assert_lavaan_fit(
     fit,
     require_converged     = TRUE,
@@ -51,12 +42,8 @@ augment2 <- function(fit,
   )
 
   # -- Validate prefix_ci ------------------------------------------------------
-  if (!is.character(prefix_ci) || length(prefix_ci) != 2L) {
-    stop("`prefix_ci` must be a character vector of length 2, e.g., c('.yhat_lwr_', '.yhat_upr_').",
-         call. = FALSE)
-  }
-  if (any(!nzchar(prefix_ci))) {
-    stop("Both elements of `prefix_ci` must be non-empty strings.", call. = FALSE)
+  if (!is.character(prefix_ci) || length(prefix_ci) != 2L || any(!nzchar(prefix_ci))) {
+    stop("`prefix_ci` must be two non-empty strings, e.g., c('.yhat_lwr_', '.yhat_upr_').", call. = FALSE)
   }
   prefix_yhat_lwr <- prefix_ci[1L]
   prefix_yhat_upr <- prefix_ci[2L]
@@ -66,9 +53,7 @@ augment2 <- function(fit,
   ov_all  <- info$observed_variables
   ov_ord  <- lavaan::lavNames(fit, type = "ov.ord")
   ov_cont <- setdiff(ov_all, ov_ord)
-  if (length(ov_cont) == 0L) {
-    stop("No continuous observed indicators detected; nothing to predict.", call. = FALSE)
-  }
+  if (length(ov_cont) == 0L) stop("No continuous observed indicators detected; nothing to predict.", call. = FALSE)
   if (length(ov_ord) > 0L) {
     warning("Skipping ordinal indicators: ", paste(ov_ord, collapse = ", "),
             ". Predicted values and residuals are computed only for continuous indicators.")
@@ -87,7 +72,7 @@ augment2 <- function(fit,
     stop("lavPredict returned ", length(fs_list), " group table(s), expected ", n_groups, ".", call. = FALSE)
   }
 
-  # --- Measurement parameters ONLY from lavInspect(..., "est") ----------------
+  # --- Measurement parameters from lavInspect(..., "est") ---------------------
   est <- lavaan::lavInspect(fit, "est")
   est_list <- if (is.list(est) && "lambda" %in% names(est)) list(est) else est
 
@@ -126,104 +111,125 @@ augment2 <- function(fit,
     yhat_list[[g]] <- tibble::as_tibble(yhat_g)
   }
 
-  # --- Bind and compute residuals --------------------------------------------
-  fs_tbl <- lapply(fs_list, tibble::as_tibble) |> dplyr::bind_rows(.id = "group")
-  idx <- suppressWarnings(as.integer(fs_tbl$group))
-  if (all(!is.na(idx)) && length(group_labels) >= max(idx)) fs_tbl$group <- group_labels[idx]
+  # --- Bind and compute residuals (explicit numeric .gid 1..G) ----------------
+  # Create a per-group tibble with an explicit integer .gid before row-binding.
+  fs_tbl_parts <- vector("list", n_groups)
+  for (g in seq_len(n_groups)) {
+    fs_tbl_parts[[g]] <- tibble::add_column(
+      tibble::as_tibble(fs_list[[g]]),
+      .gid = g,
+      .before = 1
+    )
+  }
+  fs_tbl <- dplyr::bind_rows(fs_tbl_parts)
+  fs_tbl$group <- group_labels[fs_tbl$.gid]
 
   yhat_tbl <- dplyr::bind_rows(yhat_list)
   out <- dplyr::bind_cols(fs_tbl, yhat_tbl)
 
-  for (nm in ov_cont) {
-    obs   <- nm
-    yhat  <- paste0(prefix_yhat, nm)
-    resid <- paste0(prefix_resid, nm)
-    if (!obs %in% names(out))  stop("Observed variable '", obs,  "' not found in lavPredict output.", call. = FALSE)
-    if (!yhat %in% names(out)) stop("Predicted column '", yhat, "' is missing; please report a bug.", call. = FALSE)
-    out[[resid]] <- as.numeric(out[[obs]]) - as.numeric(out[[yhat]])
-  }
+  # Vectorized residuals
+  y_obs   <- as.matrix(out[, ov_cont, drop = FALSE])
+  y_pred  <- as.matrix(out[, paste0(prefix_yhat, ov_cont), drop = FALSE])
+  resid_m <- y_obs - y_pred
+  colnames(resid_m) <- paste0(prefix_resid, ov_cont)
+  out <- dplyr::bind_cols(out, tibble::as_tibble(resid_m))
 
   # --- Optional: delta-method CIs for yhat -----------------------------------
   if (ci == "delta") {
-    # z-quantile
-    z <- stats::qnorm( (1 + level) / 2 )
+    z <- stats::qnorm((1 + level) / 2)
 
-    # Free-parameter covariance
-    V <- tryCatch(lavaan::vcov(fit), error = function(e) NULL)
+    V <- tryCatch({
+      if (is.null(vcov_type)) lavaan::vcov(fit) else lavaan::vcov(fit, type = vcov_type)
+    }, error = function(e) NULL)
     if (is.null(V)) stop("vcov(fit) is not available; cannot compute delta-method CIs.", call. = FALSE)
 
-    PT <- lavaan::parTable(fit)
+    PT     <- lavaan::parTable(fit)
+    latent <- info$latent_variables
+    single_group <- (n_groups == 1L)
 
-    # Helpers to fetch 'free' indices
+    # Helpers to fetch 'free' indices; tolerate PT$group being NA for single-group fits
     get_free_lambda <- function(g, j, k) {
-      w <- which(PT$group == g & PT$op == "=~" & PT$lhs == k & PT$rhs == j)
-      if (length(w) == 0L) return(0L)
+      if (single_group) {
+        w <- which(PT$op == "=~" & PT$lhs == k & PT$rhs == j)
+      } else {
+        w <- which(PT$group == g & PT$op == "=~" & PT$lhs == k & PT$rhs == j)
+      }
+      if (!length(w)) return(0L)
       PT$free[w[1L]]
     }
     get_free_nu <- function(g, j) {
-      w <- which(PT$group == g & PT$op == "~1" & PT$lhs == j)
-      if (length(w) == 0L) return(0L)
+      if (single_group) {
+        w <- which(PT$op == "~1" & PT$lhs == j)
+      } else {
+        w <- which(PT$group == g & PT$op == "~1" & PT$lhs == j)
+      }
+      if (!length(w)) return(0L)
       PT$free[w[1L]]
     }
 
-    latent <- info$latent_variables
-    map_list <- vector("list", n_groups)
-    names(map_list) <- group_labels
-
-    for (g in seq_len(n_groups)) {
-      idx_j <- lapply(ov_cont, function(j) {
-        lam_idx <- vapply(latent, function(k) get_free_lambda(g, j, k), integer(1))
-        nu_idx  <- get_free_nu(g, j)
-        list(lam_idx = lam_idx, nu_idx = nu_idx)
-      })
-      names(idx_j) <- ov_cont
-      map_list[[g]] <- idx_j
-    }
-
-    # Pre-create lwr/upr columns
+    # Pre-create CI columns
     for (j in ov_cont) {
-      lwr_nm <- paste0(prefix_yhat_lwr, j)
-      upr_nm <- paste0(prefix_yhat_upr, j)
-      out[[lwr_nm]] <- NA_real_
-      out[[upr_nm]] <- NA_real_
+      out[[paste0(prefix_yhat_lwr, j)]] <- NA_real_
+      out[[paste0(prefix_yhat_upr, j)]] <- NA_real_
     }
 
-    grp_col <- if ("group" %in% names(out)) out$group else rep(group_labels[1L], nrow(out))
-    for (g_lab in group_labels) {
-      g <- match(g_lab, group_labels)
-      rows_g <- which(grp_col == g_lab)
+    # Loop by explicit numeric .gid (robust across labelings)
+    for (g in seq_len(n_groups)) {
+      rows_g <- which(out$.gid == g)
       if (!length(rows_g)) next
 
       eta_mat <- as.matrix(out[rows_g, latent, drop = FALSE])
 
       for (j in ov_cont) {
-        lam_idx <- map_list[[g]][[j]]$lam_idx
-        nu_idx  <- map_list[[g]][[j]]$nu_idx
-        idx_use <- c(lam_idx[lam_idx > 0L], if (nu_idx > 0L) nu_idx else integer(0))
-        if (length(idx_use) == 0L) {
-          se <- rep(0, length(rows_g))
+        lam_idx_raw <- vapply(latent, function(k) get_free_lambda(g, j, k), integer(1))
+        nu_idx      <- get_free_nu(g, j)
+
+        ids <- c(lam_idx_raw[lam_idx_raw > 0L], if (nu_idx > 0L) nu_idx else integer(0))
+        if (!length(ids)) {
+          se <- numeric(length(rows_g))
         } else {
-          free_k <- which(lam_idx > 0L)
-          A <- if (length(free_k)) as.matrix(eta_mat[, free_k, drop = FALSE]) else matrix(nrow = length(rows_g), ncol = 0)
-          if (nu_idx > 0L) A <- cbind(A, 1.0)
-          Vsub <- V[idx_use, idx_use, drop = FALSE]
-          se2 <- rowSums((A %*% Vsub) * A)
-          se  <- sqrt(pmax(se2, 0))
+          uniq <- unique(ids)
+
+          if (any(lam_idx_raw > 0L)) {
+            A_lam   <- eta_mat[, lam_idx_raw > 0L, drop = FALSE]
+            col_ids <- lam_idx_raw[lam_idx_raw > 0L]
+            A <- do.call(cbind, lapply(uniq, function(id) {
+              if (id == nu_idx) {
+                rep(0, nrow(eta_mat))
+              } else {
+                idx <- which(col_ids == id)
+                if (length(idx)) rowSums(A_lam[, idx, drop = FALSE]) else rep(0, nrow(eta_mat))
+              }
+            }))
+          } else {
+            A <- matrix(0, nrow = length(rows_g), ncol = length(uniq))
+          }
+
+          if (nu_idx > 0L) {
+            hit <- match(nu_idx, uniq, nomatch = 0L)
+            if (hit > 0L) A[, hit] <- A[, hit] + 1
+          }
+
+          Vsub <- V[uniq, uniq, drop = FALSE]
+          se2  <- rowSums((A %*% Vsub) * A)  # g' V g per row
+          se   <- sqrt(pmax(se2, 0))
         }
 
-        yhat_nm <- paste0(prefix_yhat, j)
-        lwr_nm  <- paste0(prefix_yhat_lwr, j)
-        upr_nm  <- paste0(prefix_yhat_upr, j)
-
-        mu  <- as.numeric(out[rows_g, yhat_nm, drop = TRUE])
-        out[rows_g, lwr_nm] <- mu - z * se
-        out[rows_g, upr_nm] <- mu + z * se
+        mu <- as.numeric(out[rows_g, paste0(prefix_yhat, j), drop = TRUE])
+        out[rows_g, paste0(prefix_yhat_lwr, j)] <- mu - z * se
+        out[rows_g, paste0(prefix_yhat_upr, j)] <- mu + z * se
       }
     }
   }
 
   # Cast any <lvn.mtrx> etc. to plain doubles
-  out <- dplyr::mutate(out, dplyr::across(where(is.numeric), as.double))
+  out <- dplyr::mutate(
+    out,
+    dplyr::across(
+      dplyr::where(is.numeric),
+      as.double
+    )
+  )
 
   tibble::as_tibble(out)
 }

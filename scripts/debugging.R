@@ -12,9 +12,9 @@ E =~ E1 + E2 + E3 + E4 + E5 + A5
 
 fit1 <-lavaan::cfa(model = m,
             data = df,
-            # missing = "ml",
+            #missing = "ml",
             meanstructure = T,
-            ordered = TRUE)
+            ordered = T)
 
 fit2 <- lavaan::cfa(model = m,
             data = df,
@@ -27,8 +27,10 @@ fit3 <- lavaan::cfa(model = m,
             meanstructure = T,
             missing = "pairwise",
             group = "gender",
-            ordered = TRUE)
+            ordered = T)
 
+augment3(fit3) %>%
+  view()
 
 
 augment2(fit2) %>%
@@ -61,6 +63,23 @@ library(furrr)
 # 1) Choose a plan (multisession works cross-platform)
 plan(multisession, workers = parallel::detectCores() - 1)
 
+unique_valid <- function(x){
+  out <- unique(x)
+  out[!is.na(out)]
+}
+
+create_dummy <- function(data) {
+  values <- data %>%
+    map(unique_valid)
+  longest <- values %>%
+    map_int(length) %>%
+    max()
+  values %>%
+    map(rep_len,
+        length.out = longest) %>%
+    bind_cols()
+}
+
 # 2) Split data into chunks (by rows) — or by groups for multi-group models
 dat <- lavInspect(fit1, "data") %>%
   as.data.frame()
@@ -80,37 +99,27 @@ for (i in seq_along(idx_list)) {
   chunked[[i]] <- dat[idx_list[[i]], , drop = FALSE]
 }
 
-str(chunked)
-
-unique_valid <- function(x){
-  out <- unique(x)
-  out[!is.na(out)]
-}
 
 dummy <- dat %>%
-  select(all_of(ov_ord)) %>%
-  future_map(unique_valid) %>%
-  bind_cols() %>%
-  tidyr::fill(everything(), .direction = "downup")
+  create_dummy()
 
 chunked <- chunked %>%
   future_map(~bind_rows(dummy, .x))
 
 out <- chunked %>%
   future_map(~lavPredict(fit1, newdata = .x,
-                         append.data = TRUE))
+                         append.data = TRUE,
+                         assemble = TRUE))
 
-n_rows <- nrow(dummy)
+dummy_rows <- nrow(dummy)
 
-out <- out %>%
-  future_map(as_tibble) %>%
-  future_map(~slice(.x, -(1:n_rows))) %>%
-  bind_rows()
+for (i in seq_along(out)) {
+  out[[i]] <- out[[i]][-c(seq(dummy_rows)) , ]
+}
 
-out <- out %>%
-  mutate(
-    across(everything(), as.double)
-  )
+list(
+  do.call(rbind, out)
+)
 
 # 2) Split data into chunks (by rows) — or by groups for multi-group models
 group_var  <- tryCatch(lavaan::lavInspect(fit3, "group"), error = function(e) NULL)
@@ -123,18 +132,6 @@ group_labels  <- tryCatch(lavaan::lavInspect(fit3, "group.label"), error = funct
 
 dat <- dat %>%
   bind_rows(.id = group_var)
-
-create_dummy <- function(data) {
-  values <- data %>%
-    map(unique_valid)
-  longest <- values %>%
-    map_int(length) %>%
-    max()
-  values %>%
-    map(rep_len,
-        length.out = longest) %>%
-    bind_cols()
-}
 
 dummy <- dat %>%
   create_dummy()
@@ -161,21 +158,48 @@ chunked <- chunked %>%
 out <- chunked %>%
   future_map(~lavPredict(fit3, newdata = .x,
                          append.data = TRUE,
-                         assemble = TRUE))
+                         assemble = TRUE,
+                         drop.list.single.group = FALSE))
 
 dummy_rows <- nrow(dummy)
+
+for (i in seq_along(out)) {
+  out[[i]] <- out[[i]][-c(seq(dummy_rows)) , ]
+}
+
+out <- do.call(rbind, out)
+
+group_col <- out[, group_var]
+
+out[, group_var] <- NULL
+
+out <- split(out, group_col)
+
+out[group_labels]
+
+
 
 out <- out %>%
   future_map(as_tibble) %>%
   future_map(~slice(.x, -(1:dummy_rows))) %>%
   bind_rows()
 
+group_col <- out[[group_var]]
+
+out[[group_var]] <- NULL
+
+split(out, group_col)
+
+
 out <- out %>%
   mutate(
     across(everything(), as.double)
   )
 
-
+lavaan::lavPredict(
+  fit, transform = FALSE, append.data = TRUE,
+  assemble = FALSE, drop.list.single.group = FALSE
+)
 
 dummy
 

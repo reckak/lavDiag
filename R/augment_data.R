@@ -59,6 +59,7 @@ augment <- function(fit,
     fit, transform = FALSE, append.data = TRUE,
     assemble = FALSE, drop.list.single.group = FALSE
   )
+
   fs_list <- if (is.data.frame(fs_and_ov)) list(fs_and_ov) else fs_and_ov
   if (length(fs_list) != n_groups) {
     stop("lavPredict returned ", length(fs_list), " group table(s), expected ", n_groups, ".", call. = FALSE)
