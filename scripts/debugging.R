@@ -13,7 +13,8 @@ E =~ E1 + E2 + E3 + E4 + E5 + A5
 fit1 <-lavaan::cfa(model = m,
             data = df,
             # missing = "ml",
-            meanstructure = T)
+            meanstructure = T,
+            ordered = TRUE)
 
 fit2 <- lavaan::cfa(model = m,
             data = df,
@@ -26,117 +27,447 @@ fit3 <- lavaan::cfa(model = m,
             meanstructure = T,
             missing = "pairwise",
             group = "gender",
-            ordered = F)
-
-resid_cor(fit1)
-
-lavDiag::.is_not_lavaan_fit(1L)
-
-hopper_plot(fit1)
-
-resid_qq(fit2, n = 5)
-
-resid_corrplot(fit2)
-
-model_info(fit2)
-
-parameter_estimates(fit2)
-
-plot_cfa(fit1)
-
-info <- model_info(fit1)
-
-fs_and_ov <- lavaan::lavPredict(fit1,
-                                transform = F,
-                                append.data = T,
-                                assemble = T,
-                                drop.list.single.group = TRUE)
-
-eta_hat <- fs_and_ov[, info$latent_variables]
-
-params <- lavInspect(fit1, "est")
-lambda <- params$lambda
-nu <- params$nu
-
-y_hat <- sweep(eta_hat %*% t(lambda), 2, nu, FUN = "+")
-nms <- colnames(y_hat)
-nms_yhat <- str_c(".yhat_", nms)
-
-colnames(y_hat) <- nms_yhat
-y_hat
-
-out <- fs_and_ov %>%
-  dplyr::bind_cols(y_hat)
-
-ov <- info$observed_variables
-
-for (nm in ov) {
-  observed <- nm
-  yhat <- str_c(".yhat_", nm)
-  resid <- str_c(".resid_", nm)
-  out[[resid]] <- out[[observed]] - out[[yhat]]
-}
-
-fs_and_ov <- lavaan::lavPredict(fit3,
-                                transform = F,
-                                append.data = T,
-                                assemble = F,
-                                drop.list.single.group = FALSE)
-fs_and_ov
-
-params <- lavInspect(fit3, "est")
-
-info <- model_info(fit3)
-
-eta_hat <- fs_and_ov %>%
-  map(~.x[, info$latent_variables])
-
-lambda <- params %>%
-  map("lambda")
-
-nu <- params %>%
-  map("nu")
-
-y_hat <- vector("list", info$n_groups) %>%
-  setNames(info$group_labels)
-
-for (i in seq_len(info$n_groups)) {
-  y_hat[[i]] <- sweep(eta_hat[[i]] %*% t(lambda[[i]]), 2, nu[[i]], FUN = "+")
-}
+            ordered = TRUE)
 
 
-for (i in seq_len(info$n_groups)) {
-  nms <- colnames(y_hat[[i]])
-  new_names <- str_c(".yhat_", nms)
-  colnames(y_hat[[i]]) <- new_names
-}
+
+augment2(fit2) %>%
+  ggplot(aes(A, .yhat_A1)) +
+  geom_ribbon(aes(ymin = .yhat_lwr_A1, ymax = .yhat_upr_A1),
+              fill = "grey")+
+  geom_line() +
+  facet_wrap(~group)
 
 
-y_hat <- y_hat %>%
+dat1 <- lavaan::lavInspect(fit1, "data")
+dat2 <- lavaan::lavInspect(fit3, "data")
+
+group_var1    <- tryCatch(lavaan::lavInspect(fit1, "group"),       error = function(e) NULL)
+group_labels1 <- tryCatch(lavaan::lavInspect(fit1, "group.label"), error = function(e) NULL)
+
+group_var2    <- tryCatch(lavaan::lavInspect(fit2, "group"),       error = function(e) NULL)
+group_labels2 <- tryCatch(lavaan::lavInspect(fit2, "group.label"), error = function(e) NULL)
+
+
+dat2 <- dat2 %>%
   map(as_tibble) %>%
+  bind_rows(.id = group_var2)
+
+# Comments are in English.
+library(future)
+library(future.apply)
+library(furrr)
+
+# 1) Choose a plan (multisession works cross-platform)
+plan(multisession, workers = parallel::detectCores() - 1)
+
+# 2) Split data into chunks (by rows) — or by groups for multi-group models
+dat <- lavInspect(fit1, "data") %>%
+  as.data.frame()
+
+ov_ord <- lavNames(fit1, "ov.ord")
+n_chunks <- 10
+n_rows <- nrow(dat)
+n <- n_rows / n_chunks
+
+
+idx_list <- split(seq_len(n_rows),
+                  ceiling(seq_along(seq_len(n_rows))/n))
+
+chunked <- vector("list", length = length(idx_list))
+
+for (i in seq_along(idx_list)) {
+  chunked[[i]] <- dat[idx_list[[i]], , drop = FALSE]
+}
+
+str(chunked)
+
+unique_valid <- function(x){
+  out <- unique(x)
+  out[!is.na(out)]
+}
+
+dummy <- dat %>%
+  select(all_of(ov_ord)) %>%
+  future_map(unique_valid) %>%
+  bind_cols() %>%
+  tidyr::fill(everything(), .direction = "downup")
+
+chunked <- chunked %>%
+  future_map(~bind_rows(dummy, .x))
+
+out <- chunked %>%
+  future_map(~lavPredict(fit1, newdata = .x,
+                         append.data = TRUE))
+
+n_rows <- nrow(dummy)
+
+out <- out %>%
+  future_map(as_tibble) %>%
+  future_map(~slice(.x, -(1:n_rows))) %>%
   bind_rows()
 
-fs_and_ov <- fs_and_ov %>%
-  map(as_tibble) %>%
-  bind_rows(.id = "group")
-
-fs_and_ov <- fs_and_ov %>%
+out <- out %>%
   mutate(
-    across(-group, as.double)
+    across(everything(), as.double)
   )
 
-out <- fs_and_ov %>%
-  dplyr::bind_cols(y_hat)
+# 2) Split data into chunks (by rows) — or by groups for multi-group models
+group_var  <- tryCatch(lavaan::lavInspect(fit3, "group"), error = function(e) NULL)
+ov_ord <- lavNames(fit3, "ov.ord")
 
-ov <- info$observed_variables
+dat <- lavInspect(fit3, "data") %>%
+  map(as_tibble)
 
-for (nm in ov) {
-  observed <- nm
-  yhat <- str_c(".yhat_", nm)
-  resid <- str_c(".resid_", nm)
-  out[[resid]] <- out[[observed]] - out[[yhat]]
+group_labels  <- tryCatch(lavaan::lavInspect(fit3, "group.label"), error = function(e) NULL)
+
+dat <- dat %>%
+  bind_rows(.id = group_var)
+
+create_dummy <- function(data) {
+  values <- data %>%
+    map(unique_valid)
+  longest <- values %>%
+    map_int(length) %>%
+    max()
+  values %>%
+    map(rep_len,
+        length.out = longest) %>%
+    bind_cols()
 }
 
-augment(fit3)
+dummy <- dat %>%
+  create_dummy()
 
-lavaan::inspect(fit3, "lambda")
+n_chunks <- 10
+n_rows <- nrow(dat)
+n <- n_rows / n_chunks
+
+
+idx_list <- split(seq_len(n_rows),
+                  ceiling(seq_along(seq_len(n_rows))/n))
+
+chunked <- vector("list", length = length(idx_list))
+
+for (i in seq_along(idx_list)) {
+  chunked[[i]] <- dat[idx_list[[i]], , drop = FALSE]
+}
+
+chunked
+
+chunked <- chunked %>%
+  future_map(~bind_rows(dummy, .x))
+
+out <- chunked %>%
+  future_map(~lavPredict(fit3, newdata = .x,
+                         append.data = TRUE,
+                         assemble = TRUE))
+
+dummy_rows <- nrow(dummy)
+
+out <- out %>%
+  future_map(as_tibble) %>%
+  future_map(~slice(.x, -(1:dummy_rows))) %>%
+  bind_rows()
+
+out <- out %>%
+  mutate(
+    across(everything(), as.double)
+  )
+
+
+
+dummy
+
+n_chunks <- 10
+
+ov_ord <- lavNames(fit1, "ov.ord")
+
+n_rows <- nrow(dat)
+
+n <- n_rows / n_chunks
+
+
+split_data <- function(data, n_chunks = 10) {
+  n_rows <- nrow(data)
+  n <- n_rows / n_chunks
+
+
+  idx_list <- split(seq_len(n_rows),
+                    ceiling(seq_along(seq_len(n_rows))/n))
+
+  chunked <- vector("list", length = length(idx_list))
+
+  for (i in seq_along(idx_list)) {
+    chunked[[i]] <- data[idx_list[[i]], , drop = FALSE]
+  }
+
+  return(chunked)
+
+}
+
+
+dat <- dat %>%
+  map(split_data)
+
+
+
+chunked <- vector("list", length = length(group_labels)) %>%
+  set_names(group_labels)
+
+for (group in group_labels) {
+  chunks <- dat[[group]]
+  padding <- dummy[[group]]
+
+  for (i in seq_along(chunks)) {
+    chunked[[group]][[i]] <- bind_rows(padding, chunks[[i]])
+    chunked[[group]][[i]][[group_var]] <- group
+  }
+
+}
+
+map(chunked,
+    ~map(
+      .x,
+      ~lavPredict(fit3,
+                  newdata = .x,
+                  append.data = TRUE)
+    ))
+
+chunked %>%
+  map(
+    ~map(~lavPredict(fit3, newdata = .x,
+                    append.data = TRUE))
+  )
+
+out <- chunked %>%
+  map(~lavPredict(fit3, newdata = .x,
+                         append.data = TRUE))
+out
+
+d
+dat[[2]]
+
+dat %>%
+  map(length)
+
+
+
+dat <- dat %>%
+  bind_rows(.id = group_var ) %>%
+  mutate(chunk = rep_len(1:10, length.out = nrow(.))) %>%
+  group_by(across(all_of(c(group_var, "chunk")))) %>%
+  summarise(
+    # keep all columns of the current group (incl. grouping vars) in a list-col
+    data = list(cur_data_all()),
+    .groups = "drop"
+  ) %>%
+  left_join(dummy, by = group_var)
+
+
+
+dat <- dat %>%
+  mutate(
+    data = map2(dummy, data, bind_rows),
+    n_drop = map_int(dummy, nrow)
+  ) %>%
+  select(-dummy)
+
+dat <- dat %>%
+  mutate(
+    data = map(data,
+               ~select(.x, -all_of(c("chunk", group_var))))
+  )
+
+dat <- dat %>%
+  unnest(data) %>%
+  nest(data = all_of(c(ov_ord, group_var)))
+
+dat <- dat %>%
+  mutate(
+    fs = future_map(
+      data,
+      ~lavPredict(fit3,
+                  newdata = .x,
+                  append.data = TRUE)
+    )
+  )
+
+convert <-
+
+dat %>%
+  mutate(
+
+  )
+
+
+dat %>%
+  mutate(
+    fs = map(
+      fs,
+      ~.x %>%
+        as_tibble() %>%
+        bind_rows(.id = group_var))
+  )
+
+dat <- dat %>%
+  mutate(chunk = rep_len(1:10, length.out = nrow(.)))
+
+
+dummy <- dat %>%
+  map(
+    ~(.x %>%
+        select(all_of(ov_ord)) %>%
+        future_map(unique_valid) %>%
+        bind_cols() %>%
+        tidyr::fill(everything(), .direction = "downup"))
+
+  )
+
+group_var  <- tryCatch(lavaan::lavInspect(fit3, "group"),       error = function(e) NULL)
+
+make_chunks <- function(data) {
+  idx_list <- split(seq_len(nrow(data)), ceiling(seq_along(seq_len(nrow(data)))/100))
+
+  print(idx_list)
+
+  chunked <- vector("list", length = length(idx_list))
+
+  for (i in seq_along(idx_list)) {
+    chunked[[i]] <- data[idx_list[[i]], , drop = FALSE]
+  }
+
+  return(chunked)
+}
+
+chunked <- dat %>%
+  map(make_chunks)
+
+
+for (group in names(chunked)) {
+  map(
+    chunked[[]]
+  )
+
+}
+
+nms <- names(chunked)
+
+seq_along(chunked)
+
+names(chunked)
+
+out <- vector("list", length = length(chunked))
+
+for (group in names(chunked)) {
+  for (chunk in chunked[[group]]) {
+    print(str_c(group, chunk))
+  }
+}
+
+chunk
+seq_along(chunked)
+
+str()
+
+for (i in seq_along(chunked)) {
+  for (j in vector) {
+
+  }
+}
+
+chunked %>%
+  map(
+    ~map2(
+
+    )
+  )
+
+map2(
+  dummy,
+  chunked,
+  ~map(
+    ~bind_rows(.x, .y)
+  )
+)
+
+
+
+str(dat)
+
+dat <- dat %>%
+  bind_rows(.id = group_var)
+
+idx_list <- split(seq_len(nrow(dat)), ceiling(seq_along(seq_len(nrow(dat)))/100))
+
+chunked <- vector("list", length = length(idx_list))
+
+for (i in seq_along(idx_list)) {
+  chunked[[i]] <- dat[idx_list[[i]], , drop = FALSE]
+}
+
+str(chunked)
+
+ov_ord <- lavNames(fit3, "ov.ord")
+
+unique_valid <- function(x){
+  out <- unique(x)
+  out[!is.na(out)]
+}
+
+dummy <- dat %>%
+  select(all_of(ov_ord)) %>%
+  future_map(unique_valid) %>%
+  bind_cols() %>%
+  tidyr::fill(everything(), .direction = "downup")
+
+
+chunked <- chunked %>%
+  future_map(~bind_rows(dummy, .x))
+
+
+lavPredict(fit1, chunk_)
+
+parallel_lavPredict(fit1, chunk_size = 200)
+
+# 1) Choose a plan (multisession works cross-platform)
+plan(multisession, workers = parallel::detectCores() - 1)
+
+# 2) Split data into chunks (by rows) — or by groups for multi-group models
+dat <- lavInspect(fit1, "data") %>%
+  as_tibble()
+
+ov_ord <- lavNames(fit1, "ov.ord")
+
+dat <- dat %>%
+  mutate(
+    across(all_of(ov_ord), as.ordered)
+  )
+
+idx_list <- split(seq_len(nrow(dat)), ceiling(seq_along(seq_len(nrow(dat)))/100))
+
+chunked <- vector("list", length = length(idx_list))
+
+for (i in seq_along(idx_list)) {
+  chunked[[i]] <- dat[idx_list[[i]], , drop = FALSE]
+}
+
+str(chunked)
+
+plan("multisession", workers = 10)
+
+out <- chunked %>%
+  future_map(~lavPredict(fit1, newdata = .x,
+                         append.data = TRUE))
+
+n_rows <- nrow(dummy)
+
+out <- out %>%
+  future_map(as_tibble) %>%
+  future_map(~slice(.x, -(1:n_rows))) %>%
+  bind_rows()
+
+
+parallel_lavPredict(fit1)
+
+plot_cfa(fit1)

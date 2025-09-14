@@ -1,34 +1,3 @@
-#' Add predicted indicator values and residuals to factor-score output
-#'
-#' Computes \eqn{\hat{y} = \eta \Lambda^\top + \nu} for each observed indicator
-#' and returns a data frame that contains (a) original lavaan factor scores
-#' and observed variables, (b) predicted indicator values prefixed by
-#' \code{prefix_yhat}, and (c) residuals (observed - predicted) prefixed by
-#' \code{prefix_resid}. Works for single- and multi-group lavaan models with
-#' continuous indicators.
-#'
-#' @param fit A fitted \code{lavaan} object.
-#' @param prefix_yhat Character scalar, prefix for predicted columns. Default \code{".yhat_"}.
-#' @param prefix_resid Character scalar, prefix for residual columns. Default \code{".resid_"}.
-#'
-#' @return A \code{tibble} with original factor-score output (including observed
-#'   variables) plus columns of predicted indicators and their residuals. For
-#'   multi-group models, a \code{group} column is included with group labels.
-#'
-#' @details
-#' The function relies on \code{lavaan::lavPredict(..., transform = FALSE,
-#' append.data = TRUE)} to obtain factor scores and observed variables.
-#' Parameter estimates are taken from \code{lavInspect(fit, "est")} to extract
-#' \eqn{\Lambda} (lambda) and intercepts \eqn{\nu} (nu). If the model was not
-#' fitted with a meanstructure, intercepts are treated as zeros and a warning
-#' is issued.
-#'
-#' @examples
-#' # fit <- lavaan::cfa(model, data = dat, group = "grp", meanstructure = TRUE)
-#' # out <- add_indicator_predictions(fit)
-#' # dplyr::select(out, dplyr::starts_with(".yhat_"), dplyr::starts_with(".resid_"))
-#'
-#' @export
 #' Add predicted indicator values and residuals for continuous indicators
 #'
 #' Computes \eqn{\hat{y} = \nu + \Lambda \eta} for observed **continuous**
@@ -151,7 +120,10 @@ augment <- function(fit,
     out[[resid]] <- as.numeric(out[[obs]]) - as.numeric(out[[yhat]])
   }
 
+  out <- dplyr::mutate(out, dplyr::across(where(is.numeric), as.double))
+
   tibble::as_tibble(out)
+
 }
 
 `%||%` <- function(x, y) if (is.null(x)) y else x

@@ -83,5 +83,3 @@
 
   invisible(NULL)
 }
-
-

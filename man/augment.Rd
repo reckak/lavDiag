@@ -2,7 +2,7 @@
 % Please edit documentation in R/augment_data.R
 \name{augment}
 \alias{augment}
-\title{Add predicted indicator values and residuals to factor-score output}
+\title{Add predicted indicator values and residuals for continuous indicators}
 \usage{
 augment(fit, prefix_yhat = ".yhat_", prefix_resid = ".resid_")
 }
@@ -14,30 +14,18 @@ augment(fit, prefix_yhat = ".yhat_", prefix_resid = ".resid_")
 \item{prefix_resid}{Character scalar, prefix for residual columns. Default \code{".resid_"}.}
 }
 \value{
-A \code{tibble} with original factor-score output (including observed
-variables) plus columns of predicted indicators and their residuals. For
-multi-group models, a \code{group} column is included with group labels.
-
 A \code{tibble}. For multi-group models, includes a \code{group}
 column with group labels. Predicted and residual columns are added \strong{only}
 for continuous indicators; ordinal indicators are skipped.
 }
 \description{
-Computes \eqn{\hat{y} = \eta \Lambda^\top + \nu} for each observed indicator
-and returns a data frame that contains (a) original lavaan factor scores
-and observed variables, (b) predicted indicator values prefixed by
+Computes \eqn{\hat{y} = \nu + \Lambda \eta} for observed \strong{continuous}
+indicators and returns a tibble with (a) original factor-score output
+(including observed variables), (b) predicted values prefixed by
 \code{prefix_yhat}, and (c) residuals (observed - predicted) prefixed by
-\code{prefix_resid}. Works for single- and multi-group lavaan models with
-continuous indicators.
+\code{prefix_resid}. Works for single- and multi-group lavaan models.
 }
 \details{
-The function relies on \code{lavaan::lavPredict(..., transform = FALSE,
-append.data = TRUE)} to obtain factor scores and observed variables.
-Parameter estimates are taken from \code{lavInspect(fit, "est")} to extract
-\eqn{\Lambda} (lambda) and intercepts \eqn{\nu} (nu). If the model was not
-fitted with a meanstructure, intercepts are treated as zeros and a warning
-is issued.
-
 The function requires intercepts (\eqn{\nu}) and loadings (\eqn{\Lambda})
 to be available; it therefore enforces \code{meanstructure = TRUE}. It uses
 \code{lavaan::lavPredict(..., transform = FALSE, append.data = TRUE)} to obtain
@@ -45,10 +33,6 @@ factor scores and observed variables, and \code{lavInspect(fit, "lambda")} and
 \code{lavInspect(fit, "nu")} for measurement parameters.
 }
 \examples{
-# fit <- lavaan::cfa(model, data = dat, group = "grp", meanstructure = TRUE)
-# out <- add_indicator_predictions(fit)
-# dplyr::select(out, dplyr::starts_with(".yhat_"), dplyr::starts_with(".resid_"))
-
 # fit <- lavaan::cfa('F =~ y1 + y2 + y3', data = dat, meanstructure = TRUE)
 # out <- augment_indicator_predictions(fit)
 # dplyr::select(out, dplyr::starts_with(".yhat_"), dplyr::starts_with(".resid_"))
