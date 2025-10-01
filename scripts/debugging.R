@@ -61,7 +61,8 @@ library(future.apply)
 library(furrr)
 
 # 1) Choose a plan (multisession works cross-platform)
-plan(multisession, workers = parallel::detectCores() - 1)
+workers <- parallel::detectCores() - 1
+plan(multisession, workers = workers)
 
 unique_valid <- function(x){
   out <- unique(x)
@@ -81,13 +82,15 @@ create_dummy <- function(data) {
 }
 
 # 2) Split data into chunks (by rows) — or by groups for multi-group models
-dat <- lavInspect(fit1, "data") %>%
-  as.data.frame()
+dat_original <- lavInspect(fit1, "data") %>%
+  as_tibble()
+
+dat_unique <- dat_original %>%
+  distinct()
 
 ov_ord <- lavNames(fit1, "ov.ord")
-n_chunks <- 10
 n_rows <- nrow(dat)
-n <- n_rows / n_chunks
+n <- n_rows / workers
 
 
 idx_list <- split(seq_len(n_rows),
@@ -96,11 +99,11 @@ idx_list <- split(seq_len(n_rows),
 chunked <- vector("list", length = length(idx_list))
 
 for (i in seq_along(idx_list)) {
-  chunked[[i]] <- dat[idx_list[[i]], , drop = FALSE]
+  chunked[[i]] <- dat_unique[idx_list[[i]], , drop = FALSE]
 }
 
 
-dummy <- dat %>%
+dummy <- dat_unique %>%
   create_dummy()
 
 chunked <- chunked %>%
@@ -117,21 +120,27 @@ for (i in seq_along(out)) {
   out[[i]] <- out[[i]][-c(seq(dummy_rows)) , ]
 }
 
-list(
-  do.call(rbind, out)
-)
+out <- do.call(rbind, out) %>%
+  as_tibble()
+
+dat_original %>%
+  left_join(out)
+
+list(out)
 
 # 2) Split data into chunks (by rows) — or by groups for multi-group models
 group_var  <- tryCatch(lavaan::lavInspect(fit3, "group"), error = function(e) NULL)
 ov_ord <- lavNames(fit3, "ov.ord")
 
-dat <- lavInspect(fit3, "data") %>%
+dat_original <- lavInspect(fit3, "data") %>%
   map(as_tibble)
 
 group_labels  <- tryCatch(lavaan::lavInspect(fit3, "group.label"), error = function(e) NULL)
 
-dat <- dat %>%
+dat_original <- dat_original %>%
   bind_rows(.id = group_var)
+
+dat
 
 dummy <- dat %>%
   create_dummy()
