@@ -1,381 +1,218 @@
-#' Parallelized lavPredict for Ordinal Models
+#' Fast & simple parallel wrapper for lavaan::lavPredict (ordinal-only)
 #'
-#' A parallelized version of lavaan::lavPredict optimized for models with ordinal
-#' variables. Supports both single-group and multi-group models.
+#' Parallelization is used only when the model has ordinal indicators (ov.ord)
+#' and workers > 1. For continuous-only models it falls back to a single
+#' serial call (lavPredict is fast enough there).
 #'
-#' @param object A fitted lavaan object
-#' @param newdata Optional data.frame with new data for prediction. If NULL,
-#'   uses the original model data.
-#' @param chunk_size Integer. Number of rows per chunk for parallel processing.
-#'   Default is 100.
-#' @param cores Integer. Number of cores to use for parallel processing.
-#'   Default is parallel::detectCores() - 1.
-#' @param by_group Logical. For multi-group models, whether to chunk within
-#'   each group separately (TRUE) or across all groups (FALSE). Default is TRUE.
-#' @param ... Additional arguments passed to lavaan::lavPredict
-#'
-#' @return Predictions in the same format as lavaan::lavPredict
-#'
-#' @details
-#' This function addresses the challenge of using lavPredict with ordinal variables
-#' in parallel processing by ensuring each chunk contains all levels of ordinal
-#' variables through dummy rows.
-#'
-#' For multi-group models, two strategies are available:
-#' \itemize{
-#'   \item by_group = TRUE: Process each group separately (recommended for groups
-#'     with different ordinal levels)
-#'   \item by_group = FALSE: Process all groups together (faster for similar groups)
-#' }
-#'
-#' @examples
-#' \dontrun{
-#' # Single group model
-#' predictions <- parallel_lavPredict(fit, chunk_size = 100)
-#'
-#' # Multi-group model
-#' predictions <- parallel_lavPredict(fit_mg, by_group = TRUE)
-#' }
-#'
-#' @import future
-#' @import furrr
-#' @import dplyr
-#' @importFrom tidyr unnest
-#' @importFrom lavaan lavInspect lavNames lavPredict
-#' @importFrom purrr map transpose
-#' @importFrom parallel detectCores
-#' @importFrom tibble as_tibble
-#' @importFrom rlang .data
-#' @export
-parallel_lavPredict <- function(object,
-                                newdata = NULL,
-                                chunk_size = 100L,
-                                cores = parallel::detectCores() - 1L,
-                                by_group = TRUE,
+#' @param fit lavaan/blavaan object.
+#' @param workers integer, number of workers (default: max(1, cores-1)).
+#' @param plan one of c("auto","multisession","multicore","sequential").
+#' @param chunk_size optional integer rows per chunk (default computed as ceiling(n_unique/workers)).
+#' @param return_type "auto" | "data" | "list". For multi-group, "auto" -> list.
+#' @param progress logical; show furrr progress bar.
+#' @param ... extra args passed to lavaan::lavPredict().
+#' @return tibble (single-group) or list/tibble (multi-group; see return_type).
+lavPredict_parallel <- function(fit,
+                                workers     = NULL,
+                                plan        = c("auto","multisession","multicore","sequential"),
+                                chunk_size  = NULL,
+                                return_type = c("list","data"),
+                                progress    = FALSE,
                                 ...) {
+  # -- Checks & meta -----------------------------------------------------------
+  .assert_lavaan_fit(fit)
+  plan        <- match.arg(plan)
+  return_type <- match.arg(return_type)
 
-  # Input validation
-  if (!inherits(object, "lavaan")) {
-    stop("'object' must be a fitted lavaan model", call. = FALSE)
-  }
+  info    <- model_info(fit)
+  ov_ord  <- info$ov_ordinal
+  is_mg   <- isTRUE(info$n_groups > 1L)
+  gvar    <- info$group_var %||% ".group"
 
-  if (!is.null(newdata) && !is.data.frame(newdata)) {
-    stop("'newdata' must be a data.frame or NULL", call. = FALSE)
-  }
-
-  chunk_size <- as.integer(chunk_size)
-  if (chunk_size < 1) {
-    stop("'chunk_size' must be a positive integer", call. = FALSE)
-  }
-
-  cores <- as.integer(cores)
-  if (cores < 1) {
-    stop("'cores' must be a positive integer", call. = FALSE)
-  }
-
-  # Check required packages
-  check_packages(c("future", "furrr"))
-
-  # Set up parallelization
-  current_plan <- future::plan()
-  if (!inherits(current_plan, "sequential")) {
-    message("Future plan already set, using current configuration")
+  # Extract fitted data once (preserve original classes)
+  if (!is_mg) {
+    dat_original <- lavaan::lavInspect(fit, "data") %>% tibble::as_tibble()
   } else {
-    future::plan(future::multisession, workers = cores)
-    on.exit(future::plan(future::sequential), add = TRUE)
+    dat_original <- lavaan::lavInspect(fit, "data") %>%
+      purrr::map(tibble::as_tibble) %>%
+      dplyr::bind_rows(.id = gvar)
   }
 
-  # Get data
-  if (is.null(newdata)) {
-    dat <- lavaan::lavInspect(object, "data")
-    if (is.list(dat)) {
-      # Multi-group data is a list of matrices
-      dat <- lapply(dat, tibble::as_tibble)
+  # Keep ov_ord that truly exist in data (no retyping!)
+  ov_ord <- ov_ord[ov_ord %in% names(dat_original)]
+  has_ord <- length(ov_ord) > 0L
+
+  # Decide parallelization: ordinal-only
+  if (is.null(workers)) workers <- max(1L, parallel::detectCores(logical = TRUE) - 1L)
+  do_parallel <- has_ord && workers > 1L
+
+  # -- Fast serial path for continuous-only -----------------------------------
+  if (!do_parallel) {
+    if (!is_mg) {
+      out <- lavaan::lavPredict(fit,
+                                newdata = dat_original,
+                                append.data = TRUE,
+                                assemble = TRUE,
+                                ...)
+      return(tibble::as_tibble(out))
     } else {
-      # Single group data is a matrix
-      dat <- tibble::as_tibble(dat)
+      out <- lavaan::lavPredict(fit,
+                                newdata = dat_original,
+                                append.data = TRUE,
+                                assemble = TRUE,
+                                drop.list.single.group = FALSE,
+                                ...)
+      out <- tibble::as_tibble(out)
+      if (return_type == "data") return(out)
+      grp <- out[[gvar]]; out[[gvar]] <- NULL
+      return(split(out, grp))
     }
-  } else {
-    dat <- tibble::as_tibble(newdata)
   }
 
-  # Check if multigroup model
-  ngroups <- lavaan::lavInspect(object, "ngroups")
-  is_multigroup <- ngroups > 1L
+  # -- Parallel path for ordinal models ---------------------------------------
+  # 1) unique rows to avoid redundant predictions
+  dat_unique <- dplyr::distinct(dat_original)
 
-  if (is_multigroup) {
-    group_labels <- lavaan::lavInspect(object, "group.label")
-    message(sprintf("Detected multi-group model with %d groups: %s",
-                    ngroups, paste(group_labels, collapse = ", ")))
+  # 2) dummy rows = real rows from original data that cover all categories
+  #    (no type changes, no factors enforced)
+  dummy <- create_dummy_from_original(dat_original, ov_ord, group_var = if (is_mg) gvar else NULL)
+
+  # 3) chunking
+  n_rows <- nrow(dat_unique)
+  if (n_rows == 0L) return(dat_original)
+  if (is.null(chunk_size)) chunk_size <- ceiling(n_rows / workers)
+  idx_list <- split(seq_len(n_rows),
+                    ceiling(seq_along(seq_len(n_rows)) / chunk_size))
+  chunked <- lapply(idx_list, function(ix) dat_unique[ix, , drop = FALSE])
+
+  # prepend dummy to each chunk
+  chunked <- purrr::map(chunked, ~ dplyr::bind_rows(dummy, .x))
+
+  # 4) plan set/reset
+  reset_plan <- .set_future_plan(plan = plan, workers = workers)
+  on.exit(reset_plan(), add = TRUE)
+
+  # 5) predict in parallel
+  fopts <- list(append.data = TRUE, assemble = TRUE)
+  if (is_mg) fopts$drop.list.single.group <- FALSE
+
+  pred_fun <- function(df_chunk) {
+    do.call(lavaan::lavPredict, c(list(object = fit, newdata = df_chunk),
+                                  fopts, list(...)))
+  }
+  out_list <- furrr::future_map(chunked, pred_fun, .progress = progress)
+
+  # 6) drop dummy rows
+  dN <- nrow(dummy)
+  for (i in seq_along(out_list)) {
+    out_list[[i]] <- out_list[[i]][-(seq_len(dN)), , drop = FALSE]
   }
 
-  # Identify ordinal variables
-  ov_ord <- lavaan::lavNames(object, "ov.ord")
+  # 7) bind & merge back to original
+  out_all <- do.call(rbind, out_list) %>% tibble::as_tibble()
+  out_joined <- dplyr::left_join(dat_original, out_all, by = colnames(dat_unique))
 
-  if (length(ov_ord) == 0L) {
-    message("No ordinal variables found. Using standard lavPredict.")
-    return(lavaan::lavPredict(object, newdata = newdata, ...))
-  }
-
-  # Process based on model type and strategy
-  if (is_multigroup && by_group) {
-    process_multigroup_by_group(object, dat, ov_ord, chunk_size, ...)
-  } else {
-    process_combined(object, dat, ov_ord, chunk_size, ...)
-  }
+  if (!is_mg) return(out_joined)
+  if (return_type == "data") return(out_joined)
+  grp <- out_joined[[gvar]]; out_joined[[gvar]] <- NULL
+  split(out_joined, grp)
 }
 
-#' Check Required Packages
-#' @param packages Character vector of package names
-#' @keywords internal
-check_packages <- function(packages) {
-  missing <- packages[!vapply(packages, requireNamespace,
-                              FUN.VALUE = logical(1L), quietly = TRUE)]
+# Build a COMPLETE set of dummy rows so that every ordinal variable
+# has ALL its categories represented in each chunk.
+# - Single-group: one template row taken from data; for each ov.ord variable,
+#   create one row per category (using levels() if factor, otherwise unique()).
+# - Multi-group: do the same **per group** and ensure at least one row per group.
+create_dummy_from_original <- function(dat_original, ov_ord, group_var = NULL) {
+  # Nothing to do
+  if (length(ov_ord) == 0L) return(dat_original[0, , drop = FALSE])
 
-  if (length(missing) > 0L) {
-    stop(sprintf("Required packages not available: %s",
-                 paste(missing, collapse = ", ")), call. = FALSE)
+  ov_ord <- ov_ord[ov_ord %in% names(dat_original)]
+  if (length(ov_ord) == 0L) return(dat_original[0, , drop = FALSE])
+
+  # Helper: for a given data frame and one ordinal variable name,
+  # produce rows covering ALL categories for that variable.
+  build_rows_for_var <- function(df, var) {
+    proto <- df[1, , drop = FALSE]  # template row with correct classes
+    x     <- df[[var]]
+
+    # Categories: prefer levels() if factor; otherwise distinct observed values
+    cats <- if (is.factor(x)) levels(x) else sort(unique(x))
+
+    # If no categories (all NA), return 0-row df with same cols
+    if (length(cats) == 0L) return(df[0, , drop = FALSE])
+
+    # Build one row per category, casting the value to the same type as column x
+    rows <- lapply(cats, function(cat) {
+      r <- proto
+      r[[var]] <- .cast_like(cat, x)
+      r
+    })
+    out <- dplyr::bind_rows(rows)
+    out
   }
-}
 
-#' Process Multi-group Model by Group
-#' @param object lavaan object
-#' @param dat data
-#' @param ov_ord ordinal variable names
-#' @param chunk_size chunk size
-#' @param ... additional arguments
-#' @keywords internal
-process_multigroup_by_group <- function(object, dat, ov_ord, chunk_size, ...) {
+  if (is.null(group_var)) {
+    # -------- SINGLE-GROUP --------
+    # One template row must exist; if df empty, return 0-row
+    if (nrow(dat_original) == 0L) return(dat_original[0, , drop = FALSE])
 
-  group_labels <- lavaan::lavInspect(object, "group.label")
-  group_var <- lavaan::lavInspect(object, "group")
+    # For each ordinal var, make rows covering all categories and bind
+    parts <- lapply(ov_ord, function(v) build_rows_for_var(dat_original, v))
+    dummy <- dplyr::bind_rows(parts) %>% dplyr::distinct()
+    if (nrow(dummy) == 0L) dummy <- dat_original[0, , drop = FALSE]
+    return(dummy)
+  } else {
+    # -------- MULTI-GROUP --------
+    if (!group_var %in% names(dat_original)) {
+      stop("Group column '", group_var, "' not found in data supplied to create_dummy_from_original().")
+    }
+    if (nrow(dat_original) == 0L) return(dat_original[0, , drop = FALSE])
 
-  if (is.list(dat)) {
-    # Data is already split by groups
-    group_results <- vector("list", length(dat))
-    names(group_results) <- group_labels
+    # Work group-wise: for each group, build coverage rows for every ov.ord
+    dummy_list <- dat_original %>%
+      dplyr::group_split(.data[[group_var]], .keep = TRUE) %>%
+      lapply(function(df_g) {
+        # If a group is present, ensure at least one base row
+        parts_g <- lapply(ov_ord, function(v) build_rows_for_var(df_g, v))
+        # If some var had 0 categories (all NA), we still need at least one row for the group
+        base_g  <- df_g %>% dplyr::slice_head(n = 1)
+        dplyr::bind_rows(base_g, parts_g) %>% dplyr::distinct()
+      })
 
-    for (g in seq_along(dat)) {
-      group_data <- dat[[g]]
-      message(sprintf("Processing group %d (%s) with %d rows",
-                      g, group_labels[g], nrow(group_data)))
+    dummy <- dplyr::bind_rows(dummy_list)
 
-      group_results[[g]] <- process_single_group(
-        object, group_data, ov_ord, chunk_size, g, ...)
+    # Final safety: guarantee at least one row per group
+    have_groups <- unique(dummy[[group_var]])
+    missing_g   <- setdiff(unique(dat_original[[group_var]]), have_groups)
+    if (length(missing_g)) {
+      add <- dat_original %>%
+        dplyr::group_by(.data[[group_var]]) %>%
+        dplyr::filter(.data[[group_var]] %in% missing_g) %>%
+        dplyr::slice_head(n = 1) %>%
+        dplyr::ungroup()
+      dummy <- dplyr::bind_rows(dummy, add)
     }
 
-    return(group_results)
-
-  } else if (!is.null(group_var)) {
-    # Data has group variable
-    group_results <- vector("list", length(group_labels))
-    names(group_results) <- group_labels
-
-    for (g in seq_along(group_labels)) {
-      group_data <- dat %>%
-        dplyr::filter(.data[[group_var]] == group_labels[g])
-
-      message(sprintf("Processing group %d (%s) with %d rows",
-                      g, group_labels[g], nrow(group_data)))
-
-      if (nrow(group_data) > 0L) {
-        group_results[[g]] <- process_single_group(
-          object, group_data, ov_ord, chunk_size, g, ...)
-      }
-    }
-
-    return(group_results)
-
-  } else {
-    stop("Cannot identify group structure for multi-group model", call. = FALSE)
+    dummy <- dplyr::distinct(dummy)
+    return(dummy)
   }
 }
 
-#' Process Single Group
-#' @param object lavaan object
-#' @param group_data data for this group
-#' @param ov_ord ordinal variable names
-#' @param chunk_size chunk size
-#' @param group_id group identifier
-#' @param ... additional arguments
-#' @keywords internal
-process_single_group <- function(object, group_data, ov_ord, chunk_size, group_id, ...) {
-
-  n_rows <- nrow(group_data)
-  if (n_rows == 0L) return(NULL)
-
-  # Create chunks
-  idx_list <- split(seq_len(n_rows), ceiling(seq_len(n_rows) / chunk_size))
-
-  message(sprintf("  Splitting into %d chunks (size: %d)",
-                  length(idx_list), chunk_size))
-
-  # Create dummy rows for ordinal variables
-  dummy_data <- create_dummy_rows(group_data, ov_ord)
-
-  # Process chunks in parallel
-  predictions <- process_chunks_parallel(object, group_data, dummy_data,
-                                         idx_list, group_id, ...)
-
-  # Combine results
-  combine_predictions(predictions)
+# Cast a single scalar value to have the "same type" as a prototype vector x
+.cast_like <- function(value, x) {
+  if (is.factor(x)) {
+    return(factor(value, levels = levels(x), ordered = is.ordered(x)))
+  }
+  if (inherits(x, "Date"))    return(as.Date(value, origin = "1970-01-01"))
+  if (inherits(x, "POSIXct")) return(as.POSIXct(value, tz = attr(x, "tzone") %||% "UTC", origin = "1970-01-01"))
+  if (is.integer(x))          return(as.integer(value))
+  if (is.numeric(x))          return(as.numeric(value))
+  if (is.logical(x))          return(as.logical(value))
+  if (is.character(x))        return(as.character(value))
+  value
 }
 
-#' Process Combined (All Groups Together)
-#' @param object lavaan object
-#' @param dat data
-#' @param ov_ord ordinal variable names
-#' @param chunk_size chunk size
-#' @param ... additional arguments
-#' @keywords internal
-process_combined <- function(object, dat, ov_ord, chunk_size, ...) {
 
-  # Handle list data (multi-group)
-  if (is.list(dat)) {
-    dat <- do.call(rbind, dat)
-  }
-
-  # Ensure dat is a tibble
-  if (is.matrix(dat)) {
-    dat <- tibble::as_tibble(dat)
-  }
-
-  n_rows <- nrow(dat)
-  idx_list <- split(seq_len(n_rows), ceiling(seq_len(n_rows) / chunk_size))
-
-  message(sprintf("Processing %d rows in %d chunks (size: %d)",
-                  n_rows, length(idx_list), chunk_size))
-
-  # Create dummy rows
-  dummy_data <- create_dummy_rows(dat, ov_ord)
-
-  # Process chunks in parallel
-  message("Running parallel predictions...")
-
-  predictions <- process_chunks_parallel(object, dat, dummy_data, idx_list,
-                                         group_id = NULL, ...)
-
-  # Combine results
-  result <- combine_predictions(predictions)
-
-  message("Parallel prediction completed!")
-  result
-}
-
-#' Create Dummy Rows for Ordinal Variables
-#' @param data data.frame
-#' @param ov_ord ordinal variable names
-#' @return data.frame with dummy rows
-#' @keywords internal
-create_dummy_rows <- function(data, ov_ord) {
-
-  # Get unique values for ordinal variables
-  unique_valid <- function(x) {
-    out <- unique(x)
-    out[!is.na(out)]
-  }
-
-  dummy_ord <- data %>%
-    dplyr::select(dplyr::all_of(ov_ord)) %>%
-    furrr::future_map(unique_valid, .options = furrr::furrr_options(seed = TRUE)) %>%
-    dplyr::bind_cols()
-
-  if (nrow(dummy_ord) == 0L) {
-    return(data[integer(0), , drop = FALSE])
-  }
-
-  # Create complete dummy rows
-  dummy_full <- data[seq_len(nrow(dummy_ord)), , drop = FALSE] %>%
-    dplyr::mutate(dplyr::across(dplyr::all_of(ov_ord),
-                                ~ dummy_ord[[dplyr::cur_column()]]))
-
-  # Handle non-ordinal variables with mean values
-  non_ord_vars <- setdiff(names(data), ov_ord)
-  if (length(non_ord_vars) > 0L) {
-    means <- data %>%
-      dplyr::select(dplyr::all_of(non_ord_vars)) %>%
-      dplyr::summarise(dplyr::across(dplyr::everything(),
-                                     ~ mean(.x, na.rm = TRUE)))
-
-    dummy_full <- dummy_full %>%
-      dplyr::mutate(dplyr::across(dplyr::all_of(non_ord_vars),
-                                  ~ rep(means[[dplyr::cur_column()]],
-                                        nrow(dummy_full))))
-  }
-
-  dummy_full
-}
-
-#' Process Chunks in Parallel
-#' @param object lavaan object
-#' @param data original data
-#' @param dummy_data dummy rows
-#' @param idx_list list of row indices for chunks
-#' @param group_id group identifier (NULL for combined processing)
-#' @param ... additional arguments
-#' @keywords internal
-process_chunks_parallel <- function(object, data, dummy_data, idx_list, group_id, ...) {
-
-  n_dummy <- nrow(dummy_data)
-
-  # Prepare chunks with dummy rows
-  chunked_data <- idx_list %>%
-    furrr::future_map(function(idx) {
-      chunk_dat <- data[idx, , drop = FALSE]
-      # Ensure both are tibbles/data.frames
-      if (is.matrix(chunk_dat)) {
-        chunk_dat <- tibble::as_tibble(chunk_dat)
-      }
-      if (is.matrix(dummy_data)) {
-        dummy_data <- tibble::as_tibble(dummy_data)
-      }
-      dplyr::bind_rows(dummy_data, chunk_dat)
-    }, .options = furrr::furrr_options(seed = TRUE))
-
-  # Parallel prediction
-  predictions <- chunked_data %>%
-    furrr::future_map(function(chunk) {
-      pred <- lavaan::lavPredict(object, newdata = chunk, ...)
-
-      # Remove dummy rows from results
-      if (is.list(pred) && !is.null(group_id)) {
-        # Multi-group output, extract relevant group
-        pred <- pred[[group_id]]
-      }
-
-      if (is.matrix(pred) || is.vector(pred)) {
-        if (n_dummy > 0L) {
-          pred[seq_len(nrow(pred))[-seq_len(n_dummy)], , drop = FALSE]
-        } else {
-          pred
-        }
-      } else {
-        pred
-      }
-    }, .options = furrr::furrr_options(seed = TRUE))
-
-  predictions
-}
-
-#' Combine Prediction Results
-#' @param predictions list of prediction results
-#' @keywords internal
-combine_predictions <- function(predictions) {
-
-  if (length(predictions) == 0L) {
-    return(NULL)
-  }
-
-  first_pred <- predictions[[1]]
-
-  if (is.matrix(first_pred) || is.vector(first_pred)) {
-    do.call(rbind, predictions)
-  } else if (is.list(first_pred)) {
-    # Multi-group case
-    predictions %>%
-      purrr::transpose() %>%
-      purrr::map(~ do.call(rbind, .x))
-  } else {
-    unlist(predictions)
-  }
-}
+# tiny infix helper
+`%||%` <- function(x, y) if (is.null(x)) y else x

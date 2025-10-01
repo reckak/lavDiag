@@ -29,8 +29,13 @@ fit3 <- lavaan::cfa(model = m,
             group = "gender",
             ordered = T)
 
+lavPredict_parallel(fit3,
+                    progress = TRUE)
+
 augment3(fit3) %>%
   view()
+
+model_info(fit3)
 
 
 augment2(fit2) %>%
@@ -140,14 +145,14 @@ group_labels  <- tryCatch(lavaan::lavInspect(fit3, "group.label"), error = funct
 dat_original <- dat_original %>%
   bind_rows(.id = group_var)
 
-dat
+dat_unique <- dat_original %>%
+  distinct()
 
 dummy <- dat %>%
   create_dummy()
 
-n_chunks <- 10
-n_rows <- nrow(dat)
-n <- n_rows / n_chunks
+n_rows <- nrow(dat_unique)
+n <- n_rows / workers
 
 
 idx_list <- split(seq_len(n_rows),
@@ -156,7 +161,7 @@ idx_list <- split(seq_len(n_rows),
 chunked <- vector("list", length = length(idx_list))
 
 for (i in seq_along(idx_list)) {
-  chunked[[i]] <- dat[idx_list[[i]], , drop = FALSE]
+  chunked[[i]] <- dat_unique[idx_list[[i]], , drop = FALSE]
 }
 
 chunked
@@ -165,7 +170,8 @@ chunked <- chunked %>%
   future_map(~bind_rows(dummy, .x))
 
 out <- chunked %>%
-  future_map(~lavPredict(fit3, newdata = .x,
+  future_map(~lavPredict(fit3,
+                         newdata = .x,
                          append.data = TRUE,
                          assemble = TRUE,
                          drop.list.single.group = FALSE))
@@ -176,7 +182,11 @@ for (i in seq_along(out)) {
   out[[i]] <- out[[i]][-c(seq(dummy_rows)) , ]
 }
 
-out <- do.call(rbind, out)
+out <- do.call(rbind, out) %>%
+  as_tibble()
+
+out <- dat_original %>%
+  left_join(out)
 
 group_col <- out[, group_var]
 
@@ -184,7 +194,12 @@ out[, group_var] <- NULL
 
 out <- split(out, group_col)
 
+
+
+
 out[group_labels]
+
+
 
 
 
