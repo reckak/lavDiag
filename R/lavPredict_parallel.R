@@ -4,22 +4,29 @@
 #' and workers > 1. For continuous-only models it falls back to a single
 #' serial call (lavPredict is fast enough there).
 #'
+#' Optionally, for continuous models only, attaches standard errors of factor scores
+#' using lavaan's built-in support (no bootstrap).
+#'
 #' @param fit lavaan/blavaan object.
 #' @param workers integer, number of workers (default: max(1, cores-1)).
 #' @param plan one of c("auto","multisession","multicore","sequential").
 #' @param chunk_size optional integer rows per chunk (default computed as ceiling(n_unique/workers)).
-#' @param return_type "auto" | "data" | "list". For multi-group, "auto" -> list.
+#' @param return_type One of "list" or "data".
 #' @param progress logical; show furrr progress bar.
+#' @param se logical; if TRUE and model is continuous-only, attach SE columns.
+#' @param prefix_se_fs character; prefix for SE columns (default ".se_"), e.g., ".se_" -> ".se_<factor>".
 #' @param ... extra args passed to lavaan::lavPredict().
 #' @return tibble (single-group) or list/tibble (multi-group; see return_type).
 lavPredict_parallel <- function(fit,
-                                workers     = NULL,
-                                plan        = c("auto","multisession","multicore","sequential"),
-                                chunk_size  = NULL,
-                                return_type = c("list","data"),
-                                progress    = FALSE,
+                                workers        = NULL,
+                                plan           = c("auto","multisession","multicore","sequential"),
+                                chunk_size     = NULL,
+                                return_type    = c("list","data"),
+                                progress       = FALSE,
+                                se             = FALSE,
+                                prefix_se_fs   = ".se_",
                                 ...) {
-  # -- Checks & meta -----------------------------------------------------------
+  # -- Strict assertions & meta ------------------------------------------------
   .assert_lavaan_fit(fit)
   plan        <- match.arg(plan)
   return_type <- match.arg(return_type)
@@ -39,37 +46,131 @@ lavPredict_parallel <- function(fit,
   }
 
   # Keep ov_ord that truly exist in data (no retyping!)
-  ov_ord <- ov_ord[ov_ord %in% names(dat_original)]
+  ov_ord  <- ov_ord[ov_ord %in% names(dat_original)]
   has_ord <- length(ov_ord) > 0L
 
   # Decide parallelization: ordinal-only
   if (is.null(workers)) workers <- max(1L, parallel::detectCores(logical = TRUE) - 1L)
   do_parallel <- has_ord && workers > 1L
 
+  # Latent variable names to detect score columns
+  lv_names <- tryCatch(lavaan::lavNames(fit, type = "lv"), error = function(e) character())
+
   # -- Fast serial path for continuous-only -----------------------------------
   if (!do_parallel) {
-    if (!is_mg) {
-      out <- lavaan::lavPredict(fit,
-                                newdata = dat_original,
-                                append.data = TRUE,
-                                assemble = TRUE,
-                                ...)
-      return(tibble::as_tibble(out))
-    } else {
-      out <- lavaan::lavPredict(fit,
-                                newdata = dat_original,
-                                append.data = TRUE,
-                                assemble = TRUE,
-                                drop.list.single.group = FALSE,
-                                ...)
-      out <- tibble::as_tibble(out)
+    # Build args without passing NULL for drop.list.single.group
+    args_base <- list(
+      object      = fit,
+      newdata     = dat_original,
+      append.data = TRUE,
+      assemble    = TRUE
+    )
+    if (is_mg) args_base$drop.list.single.group <- FALSE
+    args_base <- c(args_base, rlang::dots_list(...))
+
+    base <- do.call(lavaan::lavPredict, args_base)
+    out  <- tibble::as_tibble(base)
+
+    # Attach SE only if requested (continuous-only)
+    if (isTRUE(se)) {
+      # 1) Try attribute "se" directly
+      se_attr <- tryCatch(attr(base, "se"), error = function(e) NULL)
+
+      # 2) If not present, try a second call with se=TRUE (some lavaan versions need this)
+      if (is.null(se_attr)) {
+        args_se <- list(
+          object      = fit,
+          newdata     = dat_original,
+          append.data = FALSE,
+          assemble    = TRUE,
+          se          = TRUE
+        )
+        if (is_mg) args_se$drop.list.single.group <- FALSE
+        args_se <- c(args_se, rlang::dots_list(...))
+
+        base_se <- tryCatch(do.call(lavaan::lavPredict, args_se), error = function(e) NULL)
+        se_attr <- if (!is.null(base_se)) attr(base_se, "se") else NULL
+      }
+
+      # 3) Bind SE columns if obtained  ---- robust for MG + pairwise missing
+      if (!is.null(se_attr)) {
+        # Normalize to matrix
+        if (is.list(se_attr)) se_attr <- do.call(rbind, se_attr)
+        se_mat <- as.matrix(se_attr)
+
+        # Score columns present in 'out'
+        lv_pred_cols <- intersect(lv_names, colnames(out))
+        if (length(lv_pred_cols)) {
+          # Ensure column names (fallback to lv_pred_cols order if missing)
+          if (is.null(colnames(se_mat))) {
+            if (ncol(se_mat) == length(lv_pred_cols)) {
+              colnames(se_mat) <- lv_pred_cols
+            } else {
+              colnames(se_mat) <- lv_pred_cols[seq_len(ncol(se_mat))]
+            }
+          }
+
+          # --- shape alignment ---
+          n_out <- nrow(out)
+          n_se  <- nrow(se_mat)
+
+          if (!identical(n_se, n_out)) {
+            if (isTRUE(is_mg) && gvar %in% names(out)) {
+              # counts per group in 'out'
+              grp_fac <- factor(out[[gvar]], levels = unique(out[[gvar]]))
+              cnt <- as.integer(table(grp_fac))
+              G   <- length(cnt)
+
+              if (n_se == G) {
+                # Repeat each group's SE row 'cnt[g]' times
+                idx_rep <- rep(seq_len(G), times = cnt)
+                se_mat  <- se_mat[idx_rep, , drop = FALSE]
+              } else if (n_se == 1L) {
+                # Global 1×F SE -> repeat for all rows
+                se_mat <- se_mat[rep(1L, n_out), , drop = FALSE]
+              } else {
+                warning("SE matrix has unexpected number of rows (", n_se,
+                        "); skipping SE attachment.")
+                se_mat <- NULL
+              }
+            } else if (n_se == 1L) {
+              # Single-group global 1×F -> repeat
+              se_mat <- se_mat[rep(1L, n_out), , drop = FALSE]
+            } else {
+              warning("SE matrix has unexpected number of rows (", n_se,
+                      "); skipping SE attachment.")
+              se_mat <- NULL
+            }
+          }
+
+          if (!is.null(se_mat)) {
+            # Keep only columns also present in the scores
+            keep <- intersect(colnames(se_mat), lv_pred_cols)
+            if (length(keep)) {
+              se_df <- as.data.frame(se_mat[, keep, drop = FALSE])
+              names(se_df) <- paste0(prefix_se_fs, names(se_df))
+              # Safe bind (now N rows)
+              out <- dplyr::bind_cols(out, se_df)
+            }
+          }
+        }
+      } else if (has_ord) {
+        # Shouldn't happen in continuous path; just in case
+        warning("SE not available from lavaan for ordinal models (ignored).")
+      }   # <---- MISSING BRACE WAS HERE (closes: if (isTRUE(se)) )
+    }
+
+      if (!is_mg) return(out)
       if (return_type == "data") return(out)
       grp <- out[[gvar]]; out[[gvar]] <- NULL
       return(split(out, grp))
     }
-  }
 
   # -- Parallel path for ordinal models ---------------------------------------
+  if (isTRUE(se)) {
+    warning("`se=TRUE` is only supported for continuous-only models; ignoring for ordinal models.")
+  }
+
   # 1) unique rows to avoid redundant predictions
   dat_unique <- dplyr::distinct(dat_original)
 
@@ -96,11 +197,30 @@ lavPredict_parallel <- function(fit,
   fopts <- list(append.data = TRUE, assemble = TRUE)
   if (is_mg) fopts$drop.list.single.group <- FALSE
 
-  pred_fun <- function(df_chunk) {
-    do.call(lavaan::lavPredict, c(list(object = fit, newdata = df_chunk),
-                                  fopts, list(...)))
+  # Capture dots once to avoid capturing the whole calling environment on workers
+  dots <- rlang::dots_list(...)
+
+  # Stateless worker
+  pred_fun <- function(df_chunk, fit, fopts, dots) {
+    do.call(lavaan::lavPredict,
+            c(list(object = fit, newdata = df_chunk), fopts, dots))
   }
-  out_list <- furrr::future_map(chunked, pred_fun, .progress = progress)
+
+  out_list <- base::suppressWarnings(
+    furrr::future_map(
+      chunked,
+      pred_fun,
+      fit   = fit,          # pass explicitly => no globals lookup
+      fopts = fopts,
+      dots  = dots,
+      .progress = progress,
+      .options  = furrr::furrr_options(
+        seed     = TRUE,
+        packages = c("lavaan","stats","dplyr","tibble"),
+        globals  = FALSE     # <- disable scanning/serializing outer env
+      )
+    )
+  )
 
   # 6) drop dummy rows
   dN <- nrow(dummy)
@@ -108,15 +228,21 @@ lavPredict_parallel <- function(fit,
     out_list[[i]] <- out_list[[i]][-(seq_len(dN)), , drop = FALSE]
   }
 
-  # 7) bind & merge back to original
-  out_all <- do.call(rbind, out_list) %>% tibble::as_tibble()
-  out_joined <- dplyr::left_join(dat_original, out_all, by = colnames(dat_unique))
+  # 7) bind & merge back to original (intersect join keys to avoid missing-key errors)
+  out_all   <- do.call(rbind, out_list) %>% tibble::as_tibble()
+  join_keys <- intersect(colnames(dat_unique), colnames(out_all))
+  if (!length(join_keys)) {
+    stop("lavPredict_parallel: no common join keys between data and predictions.", call. = FALSE)
+  }
+  out_joined <- dplyr::left_join(dat_original, out_all, by = join_keys)
 
   if (!is_mg) return(out_joined)
   if (return_type == "data") return(out_joined)
   grp <- out_joined[[gvar]]; out_joined[[gvar]] <- NULL
   split(out_joined, grp)
 }
+
+# ----- Helpers ---------------------------------------------------------------
 
 # Build a COMPLETE set of dummy rows so that every ordinal variable
 # has ALL its categories represented in each chunk.
@@ -148,16 +274,13 @@ create_dummy_from_original <- function(dat_original, ov_ord, group_var = NULL) {
       r[[var]] <- .cast_like(cat, x)
       r
     })
-    out <- dplyr::bind_rows(rows)
-    out
+    dplyr::bind_rows(rows)
   }
 
   if (is.null(group_var)) {
     # -------- SINGLE-GROUP --------
-    # One template row must exist; if df empty, return 0-row
     if (nrow(dat_original) == 0L) return(dat_original[0, , drop = FALSE])
 
-    # For each ordinal var, make rows covering all categories and bind
     parts <- lapply(ov_ord, function(v) build_rows_for_var(dat_original, v))
     dummy <- dplyr::bind_rows(parts) %>% dplyr::distinct()
     if (nrow(dummy) == 0L) dummy <- dat_original[0, , drop = FALSE]
@@ -169,20 +292,17 @@ create_dummy_from_original <- function(dat_original, ov_ord, group_var = NULL) {
     }
     if (nrow(dat_original) == 0L) return(dat_original[0, , drop = FALSE])
 
-    # Work group-wise: for each group, build coverage rows for every ov.ord
     dummy_list <- dat_original %>%
       dplyr::group_split(.data[[group_var]], .keep = TRUE) %>%
       lapply(function(df_g) {
-        # If a group is present, ensure at least one base row
         parts_g <- lapply(ov_ord, function(v) build_rows_for_var(df_g, v))
-        # If some var had 0 categories (all NA), we still need at least one row for the group
         base_g  <- df_g %>% dplyr::slice_head(n = 1)
         dplyr::bind_rows(base_g, parts_g) %>% dplyr::distinct()
       })
 
     dummy <- dplyr::bind_rows(dummy_list)
 
-    # Final safety: guarantee at least one row per group
+    # Guarantee at least one row per group
     have_groups <- unique(dummy[[group_var]])
     missing_g   <- setdiff(unique(dat_original[[group_var]]), have_groups)
     if (length(missing_g)) {
@@ -194,8 +314,7 @@ create_dummy_from_original <- function(dat_original, ov_ord, group_var = NULL) {
       dummy <- dplyr::bind_rows(dummy, add)
     }
 
-    dummy <- dplyr::distinct(dummy)
-    return(dummy)
+    dplyr::distinct(dummy)
   }
 }
 
@@ -212,7 +331,3 @@ create_dummy_from_original <- function(dat_original, ov_ord, group_var = NULL) {
   if (is.character(x))        return(as.character(value))
   value
 }
-
-
-# tiny infix helper
-`%||%` <- function(x, y) if (is.null(x)) y else x

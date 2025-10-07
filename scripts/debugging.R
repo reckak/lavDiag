@@ -11,16 +11,20 @@ E =~ E1 + E2 + E3 + E4 + E5 + A5
 "
 
 fit1 <-lavaan::cfa(model = m,
-            data = df,
+            data = psych::bfi %>%
+              dplyr::mutate(gender = factor(gender,
+                                            labels = c("Males", "Females"))),
             #missing = "ml",
             meanstructure = T,
-            ordered = T)
+            ordered = F,
+            parameterization = "theta")
 
 fit2 <- lavaan::cfa(model = m,
             data = df,
-            missing = "ml",
-            group = "gender",
-            ordered = F)
+            missing = "pairwise",
+            # group = "gender",
+            meanstructure = T,
+            ordered = T)
 
 fit3 <- lavaan::cfa(model = m,
             data = df,
@@ -29,11 +33,60 @@ fit3 <- lavaan::cfa(model = m,
             group = "gender",
             ordered = T)
 
-lavPredict_parallel(fit3,
-                    progress = TRUE)
+info <- model_info(fit3)
+lv <- info$latent_variables
+dat2 <- lavPredict_parallel(fit2)
+dat3 <- lavPredict_parallel(fit3)
+info2 <- model_info(fit2)
+info3 <- model_info(fit3)
 
-augment3(fit3) %>%
+.augment_ordinal(fit2)
+.augment_ordinal(fit3)
+
+.augment_ordinal(dat = dat3,
+                 fit = fit3,
+                 info = info3) %>%
   view()
+
+.augment_ordinal(fit2)
+
+aug <- augment(fit1)
+
+aug <- augment_ordinal(fit3)
+aug %>%
+  ggplot(aes(A, .yhat_A4)) +
+  geom_point()
+
+names(aug)
+
+dat %>%
+  select(all_of(lv)) %>%
+  map(range, na.rm = TRUE)
+
+augment_continuous(fit3, se = T) %>%
+  View()
+lavPredict(fit3, se = T)
+lavPredict(fit3, se = "standard")
+
+lavPredict_parallel_2(fit1,
+                      se = TRUE,
+                      R = 100)
+
+lavPredict_parallel_2(fit2, se = T)
+
+model_info(fit1)
+lavaan::lavInspect(fit1, "estimator")
+
+aug <- augment_ordinal_5(fit3, ci = TRUE,
+                         ystar = TRUE, pr = TRUE,
+                         resid = TRUE, yhat = TRUE)
+
+names(df)
+x <- df %>%
+  select(.pr_X1__A3:.pr_X6__A3) %>% rowSums()
+
+all(near(x, 1))
+table(x)
 
 model_info(fit3)
 

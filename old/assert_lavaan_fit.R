@@ -50,7 +50,7 @@
   if (isTRUE(forbid_multilevel)) {
     n_levels <- tryCatch(lavaan::lavInspect(fit, "nlevels"), error = function(e) NA_integer_)
     if (!is.na(n_levels) && n_levels >= 2L) {
-      stop("Multilevel models not supported yet.", call. = FALSE)
+      stop("Multilevel model detected, but a single-level model is required here.", call. = FALSE)
     }
   }
 
