@@ -13,7 +13,7 @@ hopper_plot(fit, title = NULL, n_max = 15, sep = "___")
 
 \item{n_max}{Number of variable pairs to show (per group when multi-group).}
 
-\item{sep}{Separator used by \code{reorder_within()} for multi-group axis
+\item{sep}{Separator used by \code{.reorder_within()} for multi-group axis
 labelling. You usually don't need to change this.}
 }
 \value{
@@ -30,8 +30,15 @@ HS.model <- '
   textual =~ x4 + x5 + x6
   speed   =~ x7 + x8 + x9
 '
-fit <- lavaan::cfa(HS.model, data = lavaan::HolzingerSwineford1939)
-p <- hopper_plot(fit, n_max = 10)
-p
+fit <- lavaan::cfa(HS.model,
+                   data = lavaan::HolzingerSwineford1939)
+hopper_plot(fit, n_max = 10)
 
 }
+\seealso{
+\link{resid_cor}, \link{resid_corrplot}
+
+Other lavDiag-visualization: 
+\code{\link{item_plot}()}
+}
+\concept{lavDiag-visualization}
