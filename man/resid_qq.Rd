@@ -19,7 +19,7 @@ A \code{ggplot2} object.
 \description{
 Draws a Q-Q plot for residual correlation z-statistics returned by
 \code{resid_cor()}. For multi-group models, a separate panel is drawn for
-each group. The \code{n} most extreme pairs (by |z|) are labelled.
+each group. The \code{n} most extreme pairs (by |z|) are labeled.
 }
 \details{
 The z-statistics are expected to follow approximately a standard normal

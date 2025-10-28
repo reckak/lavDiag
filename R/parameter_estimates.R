@@ -1,6 +1,6 @@
 #' Parameter estimates from lavaan with a unified schema
 #'
-#' Extracts raw or standardized coefficients from a fitted lavaan/blavaan model,
+#' Extracts raw or standardized coefficients from a fitted lavaan model,
 #' always ensuring a `group` column is present (set to 1 for single-group models).
 #' Internally, the function relies on `lavaan::parameterEstimates()` for raw
 #' estimates and `lavaan::standardizedSolution()` for standardized coefficients.
@@ -12,7 +12,7 @@
 #' When `include_r2 = TRUE`, R² values are appended for each endogenous variable
 #' if available in the model.
 #'
-#' @param fit A fitted `lavaan` or `blavaan` object.
+#' @param fit A fitted `lavaan` object.
 #' @param level Confidence level for intervals (default `0.95`).
 #' @param standardized Either a logical (FALSE/TRUE) or one of
 #'   `c("none", "std.all", "std.lv", "std.nox")`. If `TRUE`, it is treated as `"std.all"`.

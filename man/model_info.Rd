@@ -2,12 +2,12 @@
 % Please edit documentation in R/model_info.R
 \name{model_info}
 \alias{model_info}
-\title{Extract compact, robust meta-information about a lavaan/blavaan fit}
+\title{Extract compact, robust meta-information about a lavaan fit}
 \usage{
 model_info(fit)
 }
 \arguments{
-\item{fit}{A fitted \code{lavaan} or \code{blavaan} model object.}
+\item{fit}{A fitted \code{lavaan} model object.}
 }
 \value{
 A named \code{list} with the following elements:
@@ -38,7 +38,7 @@ A named \code{list} with the following elements:
 }
 }
 \description{
-Lightweight helper that queries a fitted \pkg{lavaan}/\pkg{blavaan} object
+Lightweight helper that queries a fitted \pkg{lavaan} object
 for commonly needed model metadata (grouping, variables, estimator,
 parameterization, categorical/multilevel flags, etc.). All lookups are
 wrapped in \code{tryCatch()}, so the function returns informative \code{NA}/\code{NULL}

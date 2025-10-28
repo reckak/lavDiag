@@ -28,7 +28,7 @@ lavPredict_parallel(
 )
 }
 \arguments{
-\item{fit}{lavaan or blavaan model object.}
+\item{fit}{lavaan model object.}
 
 \item{method}{Character; estimation method passed to \code{lavaan::lavPredict()}
 (e.g., \code{"ml"}, \code{"regression"}, \code{"EBM"}, \code{"EMB"}).}
@@ -84,7 +84,7 @@ containing predicted factor scores and optionally SEs and diagnostics.
 Parallel, ordinal-aware, and mixed-safe implementation of \code{lavaan::lavPredict()}.
 }
 \details{
-\subsection{Model-type behaviour}{
+\subsection{Model-type behaviur}{
 \itemize{
 \item \strong{Purely ordinal models:}
 Optionally reduces duplicated work via \code{dplyr::distinct()} on full rows.

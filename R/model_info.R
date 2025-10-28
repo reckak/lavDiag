@@ -1,7 +1,7 @@
-#' Extract compact, robust meta-information about a lavaan/blavaan fit
+#' Extract compact, robust meta-information about a lavaan fit
 #'
 #' @description
-#' Lightweight helper that queries a fitted \pkg{lavaan}/\pkg{blavaan} object
+#' Lightweight helper that queries a fitted \pkg{lavaan} object
 #' for commonly needed model metadata (grouping, variables, estimator,
 #' parameterization, categorical/multilevel flags, etc.). All lookups are
 #' wrapped in `tryCatch()`, so the function returns informative `NA`/`NULL`
@@ -22,7 +22,7 @@
 #' model has no \code{"group"}), the corresponding element is set to \code{NA},
 #' \code{NULL}, or a sensible default.
 #'
-#' @param fit A fitted \code{lavaan} or \code{blavaan} model object.
+#' @param fit A fitted \code{lavaan} model object.
 #'
 #' @return A named \code{list} with the following elements:
 #' \describe{
