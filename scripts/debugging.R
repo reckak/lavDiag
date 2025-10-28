@@ -6,9 +6,10 @@ df <- psych::bfi %>%
 
 m <- "
 A =~ A1 + A2 + A3 + A4 + A5
-E =~ E1 + E2 + E3 + E4 + E5 + A5
-
+E =~ E1 + E2 + E3 + E4 + E5
 "
+
+ord <- c("E1", "E2", "E3", "E4", "E5")
 
 fit1 <-lavaan::cfa(model = m,
             data = psych::bfi %>%
@@ -16,559 +17,229 @@ fit1 <-lavaan::cfa(model = m,
                                             labels = c("Males", "Females"))),
             #missing = "ml",
             meanstructure = T,
-            ordered = F,
+            ordered = T,
             parameterization = "theta")
 
-fit2 <- lavaan::cfa(model = m,
+fit1 <- lavaan::cfa(model = m,
             data = df,
             missing = "pairwise",
             # group = "gender",
             meanstructure = T,
-            ordered = T)
+            ordered = F)
 
-fit3 <- lavaan::cfa(model = m,
-            data = df,
-            meanstructure = T,
-            missing = "pairwise",
-            group = "gender",
-            ordered = T)
+fit2 <- lavaan::cfa(model = m,
+                    data = df,
+                    meanstructure = T,
+                    missing = "pairwise",
+                    group = "gender",
+                    ordered = ord)
+resid_cor(fit1)
+resid_cor(fit2)
 
-info <- model_info(fit3)
-lv <- info$latent_variables
-dat2 <- lavPredict_parallel(fit2)
-dat3 <- lavPredict_parallel(fit3)
-info2 <- model_info(fit2)
-info3 <- model_info(fit3)
+lavaan::lavResiduals(fit1)
 
-.augment_ordinal(fit2)
-.augment_ordinal(fit3)
+# single group
+plot_cfa(fit1)
+resid_corrplot(fit1)
 
-.augment_ordinal(dat = dat3,
-                 fit = fit3,
-                 info = info3) %>%
-  view()
+resid_qq(fit1)
 
-.augment_ordinal(fit2)
-
-aug <- augment(fit1)
-
-aug <- augment_ordinal(fit3)
-aug %>%
-  ggplot(aes(A, .yhat_A4)) +
-  geom_point()
-
-names(aug)
-
-dat %>%
-  select(all_of(lv)) %>%
-  map(range, na.rm = TRUE)
-
-augment_continuous(fit3, se = T) %>%
-  View()
-lavPredict(fit3, se = T)
-lavPredict(fit3, se = "standard")
-
-lavPredict_parallel_2(fit1,
-                      se = TRUE,
-                      R = 100)
-
-lavPredict_parallel_2(fit2, se = T)
-
-model_info(fit1)
-lavaan::lavInspect(fit1, "estimator")
-
-aug <- augment_ordinal_5(fit3, ci = TRUE,
-                         ystar = TRUE, pr = TRUE,
-                         resid = TRUE, yhat = TRUE)
-
-names(df)
-x <- df %>%
-  select(.pr_X1__A3:.pr_X6__A3) %>% rowSums()
-
-all(near(x, 1))
-table(x)
+lavPredict_parallel(fit1)
+lavPredict_parallel(fit3)
 
 model_info(fit3)
 
 
-augment2(fit2) %>%
-  ggplot(aes(A, .yhat_A1)) +
-  geom_ribbon(aes(ymin = .yhat_lwr_A1, ymax = .yhat_upr_A1),
-              fill = "grey")+
-  geom_line() +
-  facet_wrap(~group)
-
-
-dat1 <- lavaan::lavInspect(fit1, "data")
-dat2 <- lavaan::lavInspect(fit3, "data")
-
-group_var1    <- tryCatch(lavaan::lavInspect(fit1, "group"),       error = function(e) NULL)
-group_labels1 <- tryCatch(lavaan::lavInspect(fit1, "group.label"), error = function(e) NULL)
-
-group_var2    <- tryCatch(lavaan::lavInspect(fit2, "group"),       error = function(e) NULL)
-group_labels2 <- tryCatch(lavaan::lavInspect(fit2, "group.label"), error = function(e) NULL)
-
-
-dat2 <- dat2 %>%
-  map(as_tibble) %>%
-  bind_rows(.id = group_var2)
-
-# Comments are in English.
-library(future)
-library(future.apply)
-library(furrr)
-
-# 1) Choose a plan (multisession works cross-platform)
-workers <- parallel::detectCores() - 1
-plan(multisession, workers = workers)
-
-unique_valid <- function(x){
-  out <- unique(x)
-  out[!is.na(out)]
+lavaan::lavInspect(fit3, "case.idx")
+.case_ids <- function(fit) {
+  lavaan::lavInspect(fit, "case.idx")
 }
 
-create_dummy <- function(data) {
-  values <- data %>%
-    map(unique_valid)
-  longest <- values %>%
-    map_int(length) %>%
-    max()
-  values %>%
-    map(rep_len,
-        length.out = longest) %>%
-    bind_cols()
-}
+lavaan::lavPredict(fit2, append.data = TRUE, drop.list.single.group = FALSE)
+lavaan::lavPredict(fit3, append.data = TRUE, drop.list.single.group = FALSE)
 
-# 2) Split data into chunks (by rows) — or by groups for multi-group models
-dat_original <- lavInspect(fit1, "data") %>%
-  as_tibble()
+hopper_plot(fit2)
+hopper_plot(fit3)
+.prepare_continuous(fit2)
+.prepare_ordinal(fit2)
 
-dat_unique <- dat_original %>%
-  distinct()
-
-ov_ord <- lavNames(fit1, "ov.ord")
-n_rows <- nrow(dat)
-n <- n_rows / workers
+.prepare_continuous(fit3)
+.prepare_ordinal(fit3)
 
 
-idx_list <- split(seq_len(n_rows),
-                  ceiling(seq_along(seq_len(n_rows))/n))
+lavPredict_parallel(fit2)
+lavPredict_parallel(fit3)
 
-chunked <- vector("list", length = length(idx_list))
-
-for (i in seq_along(idx_list)) {
-  chunked[[i]] <- dat_unique[idx_list[[i]], , drop = FALSE]
-}
+sg1 <- item_data(fit1) # single group model
+sg2 <- item_data(fit2) # single group model
 
 
-dummy <- dat_unique %>%
-  create_dummy()
+item_plot(sg1, latent = "E",
+          sort = "r2",
+          jitter_seed = 333)
+item_plot(sg1, latent = "A",
+          sort = "r2",
+          jitter_seed = 333)
+item_plot(sg2, latent = "E",
+          sort = "r2",
+          jitter_seed = 333)
+item_plot(sg2, latent = "A",
+          sort = "r2",
+          jitter_seed = 333)
 
-chunked <- chunked %>%
-  future_map(~bind_rows(dummy, .x))
+p2 <- item_plot(sg2, latent = "E",
+                sort = "r2",
+                jitter_seed = 333)
+print(p2)
 
-out <- chunked %>%
-  future_map(~lavPredict(fit1, newdata = .x,
-                         append.data = TRUE,
-                         assemble = TRUE))
+p2 <- item_plot(mg,
+                latent = "A",
+                facet = "grid",
+                metrics_pad = .1,
+                alpha_points = .1,
+                sort = "r2",
+                jitter_sd = 0.1)
+print(p2)
 
-dummy_rows <- nrow(dummy)
+non_pen <- c("r2", "rmse", "mae")
+pen <- c("r2_pen", "rmse_pen", "mae_pen")
 
-for (i in seq_along(out)) {
-  out[[i]] <- out[[i]][-c(seq(dummy_rows)) , ]
-}
+facet_names <- c(
+  r2   = "1 - italic(R)^2",  # R kurzívou a 2 jako horní index
+  rmse = "\"RMSE\"",
+  mae  = "\"MAE\""
+) %>%
+  ggplot2::as_labeller(ggplot2::label_parsed)
 
-out <- do.call(rbind, out) %>%
-  as_tibble()
-
-dat_original %>%
-  left_join(out)
-
-list(out)
-
-# 2) Split data into chunks (by rows) — or by groups for multi-group models
-group_var  <- tryCatch(lavaan::lavInspect(fit3, "group"), error = function(e) NULL)
-ov_ord <- lavNames(fit3, "ov.ord")
-
-dat_original <- lavInspect(fit3, "data") %>%
-  map(as_tibble)
-
-group_labels  <- tryCatch(lavaan::lavInspect(fit3, "group.label"), error = function(e) NULL)
-
-dat_original <- dat_original %>%
-  bind_rows(.id = group_var)
-
-dat_unique <- dat_original %>%
-  distinct()
-
-dummy <- dat %>%
-  create_dummy()
-
-n_rows <- nrow(dat_unique)
-n <- n_rows / workers
-
-
-idx_list <- split(seq_len(n_rows),
-                  ceiling(seq_along(seq_len(n_rows))/n))
-
-chunked <- vector("list", length = length(idx_list))
-
-for (i in seq_along(idx_list)) {
-  chunked[[i]] <- dat_unique[idx_list[[i]], , drop = FALSE]
-}
-
-chunked
-
-chunked <- chunked %>%
-  future_map(~bind_rows(dummy, .x))
-
-out <- chunked %>%
-  future_map(~lavPredict(fit3,
-                         newdata = .x,
-                         append.data = TRUE,
-                         assemble = TRUE,
-                         drop.list.single.group = FALSE))
-
-dummy_rows <- nrow(dummy)
-
-for (i in seq_along(out)) {
-  out[[i]] <- out[[i]][-c(seq(dummy_rows)) , ]
-}
-
-out <- do.call(rbind, out) %>%
-  as_tibble()
-
-out <- dat_original %>%
-  left_join(out)
-
-group_col <- out[, group_var]
-
-out[, group_var] <- NULL
-
-out <- split(out, group_col)
-
-
-
-
-out[group_labels]
-
-
-
-
-
-out <- out %>%
-  future_map(as_tibble) %>%
-  future_map(~slice(.x, -(1:dummy_rows))) %>%
-  bind_rows()
-
-group_col <- out[[group_var]]
-
-out[[group_var]] <- NULL
-
-split(out, group_col)
-
-
-out <- out %>%
+sg1$metrics %>%
   mutate(
-    across(everything(), as.double)
-  )
-
-lavaan::lavPredict(
-  fit, transform = FALSE, append.data = TRUE,
-  assemble = FALSE, drop.list.single.group = FALSE
-)
-
-dummy
-
-n_chunks <- 10
-
-ov_ord <- lavNames(fit1, "ov.ord")
-
-n_rows <- nrow(dat)
-
-n <- n_rows / n_chunks
-
-
-split_data <- function(data, n_chunks = 10) {
-  n_rows <- nrow(data)
-  n <- n_rows / n_chunks
-
-
-  idx_list <- split(seq_len(n_rows),
-                    ceiling(seq_along(seq_len(n_rows))/n))
-
-  chunked <- vector("list", length = length(idx_list))
-
-  for (i in seq_along(idx_list)) {
-    chunked[[i]] <- data[idx_list[[i]], , drop = FALSE]
-  }
-
-  return(chunked)
-
-}
-
-
-dat <- dat %>%
-  map(split_data)
-
-
-
-chunked <- vector("list", length = length(group_labels)) %>%
-  set_names(group_labels)
-
-for (group in group_labels) {
-  chunks <- dat[[group]]
-  padding <- dummy[[group]]
-
-  for (i in seq_along(chunks)) {
-    chunked[[group]][[i]] <- bind_rows(padding, chunks[[i]])
-    chunked[[group]][[i]][[group_var]] <- group
-  }
-
-}
-
-map(chunked,
-    ~map(
-      .x,
-      ~lavPredict(fit3,
-                  newdata = .x,
-                  append.data = TRUE)
-    ))
-
-chunked %>%
-  map(
-    ~map(~lavPredict(fit3, newdata = .x,
-                    append.data = TRUE))
-  )
-
-out <- chunked %>%
-  map(~lavPredict(fit3, newdata = .x,
-                         append.data = TRUE))
-out
-
-d
-dat[[2]]
-
-dat %>%
-  map(length)
-
-
-
-dat <- dat %>%
-  bind_rows(.id = group_var ) %>%
-  mutate(chunk = rep_len(1:10, length.out = nrow(.))) %>%
-  group_by(across(all_of(c(group_var, "chunk")))) %>%
-  summarise(
-    # keep all columns of the current group (incl. grouping vars) in a list-col
-    data = list(cur_data_all()),
-    .groups = "drop"
-  ) %>%
-  left_join(dummy, by = group_var)
-
-
-
-dat <- dat %>%
+    across(
+      c(r2, r2_pen),
+      ~1 - .x
+    )) %>%
+  pivot_longer(cols = all_of(non_pen),
+               names_to = "metric") %>%
   mutate(
-    data = map2(dummy, data, bind_rows),
-    n_drop = map_int(dummy, nrow)
-  ) %>%
-  select(-dummy)
+    metric = factor(metric, levels = non_pen),
+    item = reorder_within(item, -value, within = metric)) %>%
+  ggplot(aes(value, item)) +
+  geom_point(size = 2) +
+  geom_line(mapping = aes(group = 1)) +
+  facet_wrap(~metric, scales = "free",
+             labeller = facet_names) +
+  ggplot2::expand_limits(x = 0) +
+  ggplot2::scale_y_discrete(labels = function(x) sub(paste0("__", ".*$"), "", x)) +
+  labs(x = "Value", y = "Item")
 
-dat <- dat %>%
+p <- position_dodge(width = .2, orientation = "y")
+
+sg2$metrics %>%
   mutate(
-    data = map(data,
-               ~select(.x, -all_of(c("chunk", group_var))))
-  )
-
-dat <- dat %>%
-  unnest(data) %>%
-  nest(data = all_of(c(ov_ord, group_var)))
-
-dat <- dat %>%
+    across(
+      c(r2, r2_pen),
+      ~1 - .x
+    )) %>%
+  pivot_longer(cols = all_of(non_pen),
+               names_to = "metric") %>%
   mutate(
-    fs = future_map(
-      data,
-      ~lavPredict(fit3,
-                  newdata = .x,
-                  append.data = TRUE)
-    )
-  )
+    metric = factor(metric, levels = non_pen),
+    item = reorder_within(item, -value, within = metric)) %>%
+  ggplot(aes(value, item, color = .group)) +
+  geom_point(size = 2, position = p) +
+  geom_line(mapping = aes(group = .group),
+            orientation = "y",
+            position = p) +
+  facet_wrap(~metric, scales = "free",
+             labeller = facet_names) +
+  ggplot2::expand_limits(x = 0) +
+  ggplot2::scale_y_discrete(labels = function(x) sub(paste0("__", ".*$"), "", x)) +
+  labs(x = "Value", y = "Item", color = "Group") +
+  theme(legend.position = "top")
 
-convert <-
 
-dat %>%
+# Single group model
+orig <- sg$original_data
+metrics <- sg$metrics
+new <- sg$new_data
+
+metrics <- metrics %>%
   mutate(
-
-  )
-
-
-dat %>%
-  mutate(
-    fs = map(
-      fs,
+    across(
+      c(r2, rmse, mae, r2_pen, rmse_pen, mae_pen),
       ~.x %>%
-        as_tibble() %>%
-        bind_rows(.id = group_var))
-  )
-
-dat <- dat %>%
-  mutate(chunk = rep_len(1:10, length.out = nrow(.)))
-
-
-dummy <- dat %>%
-  map(
-    ~(.x %>%
-        select(all_of(ov_ord)) %>%
-        future_map(unique_valid) %>%
-        bind_cols() %>%
-        tidyr::fill(everything(), .direction = "downup"))
-
-  )
-
-group_var  <- tryCatch(lavaan::lavInspect(fit3, "group"),       error = function(e) NULL)
-
-make_chunks <- function(data) {
-  idx_list <- split(seq_len(nrow(data)), ceiling(seq_along(seq_len(nrow(data)))/100))
-
-  print(idx_list)
-
-  chunked <- vector("list", length = length(idx_list))
-
-  for (i in seq_along(idx_list)) {
-    chunked[[i]] <- data[idx_list[[i]], , drop = FALSE]
-  }
-
-  return(chunked)
-}
-
-chunked <- dat %>%
-  map(make_chunks)
-
-
-for (group in names(chunked)) {
-  map(
-    chunked[[]]
-  )
-
-}
-
-nms <- names(chunked)
-
-seq_along(chunked)
-
-names(chunked)
-
-out <- vector("list", length = length(chunked))
-
-for (group in names(chunked)) {
-  for (chunk in chunked[[group]]) {
-    print(str_c(group, chunk))
-  }
-}
-
-chunk
-seq_along(chunked)
-
-str()
-
-for (i in seq_along(chunked)) {
-  for (j in vector) {
-
-  }
-}
-
-chunked %>%
-  map(
-    ~map2(
-
+        round(digits = 3) %>%
+        format(digits = 3, nsmall = 3)
     )
   )
 
-map2(
-  dummy,
-  chunked,
-  ~map(
-    ~bind_rows(.x, .y)
-  )
+item <- metrics %>%
+  filter(item == "A2")
+
+
+r2   <- item$r2;   r2_pen   <- item$r2_pen
+rmse <- item$rmse; rmse_pen <- item$rmse_pen
+mae  <- item$mae;  mae_pen  <- item$mae_pen
+
+cap <- bquote(
+  italic(R)^2 == .(r2) * "," ~
+    plain("RMSE") == .(rmse) * "," ~
+    plain("MAE") == .(mae) * ","
 )
 
+set.seed(123)
+
+n <- 100              # počet respondentů
+k <- 3                # počet položek
+lambda <- c(.4, .5, .6)
+
+F1 <- rnorm(n)        # latentní faktor
+E  <- matrix(rnorm(n * k), n, k)  # náhodné chyby
+Y  <- sweep(E, 2, lambda * F1, "+")  # Y_ij = λ_j * F_i + ε_ij
+
+colnames(Y) <- paste0("y", 1:k)
+Y <- as.data.frame(Y)
+head(Y)
+
+congen <- psych::sim.congeneric(
+  loads = seq(0.4, 0.6, by = .1),
+  N = 1000,
+  short = FALSE,
+  categorical = TRUE,
+  cuts = 0
+) %>%
+  .$observed %>%
+  dplyr::as_tibble() %>%
+  rlang::set_names("a1", "a2", "a3")
 
 
-str(dat)
-
-dat <- dat %>%
-  bind_rows(.id = group_var)
-
-idx_list <- split(seq_len(nrow(dat)), ceiling(seq_along(seq_len(nrow(dat)))/100))
-
-chunked <- vector("list", length = length(idx_list))
-
-for (i in seq_along(idx_list)) {
-  chunked[[i]] <- dat[idx_list[[i]], , drop = FALSE]
-}
-
-str(chunked)
-
-ov_ord <- lavNames(fit3, "ov.ord")
-
-unique_valid <- function(x){
-  out <- unique(x)
-  out[!is.na(out)]
-}
-
-dummy <- dat %>%
-  select(all_of(ov_ord)) %>%
-  future_map(unique_valid) %>%
-  bind_cols() %>%
-  tidyr::fill(everything(), .direction = "downup")
 
 
-chunked <- chunked %>%
-  future_map(~bind_rows(dummy, .x))
+mod <- "
+F =~ V1 + V2 + V3 + V4 + V5 + V6
+"
+
+fit5 <-lavaan::cfa(model = mod,
+                   data = congen,
+                   ordered = T)
 
 
-lavPredict(fit1, chunk_)
 
-parallel_lavPredict(fit1, chunk_size = 200)
-
-# 1) Choose a plan (multisession works cross-platform)
-plan(multisession, workers = parallel::detectCores() - 1)
-
-# 2) Split data into chunks (by rows) — or by groups for multi-group models
-dat <- lavInspect(fit1, "data") %>%
-  as_tibble()
-
-ov_ord <- lavNames(fit1, "ov.ord")
-
-dat <- dat %>%
-  mutate(
-    across(all_of(ov_ord), as.ordered)
-  )
-
-idx_list <- split(seq_len(nrow(dat)), ceiling(seq_along(seq_len(nrow(dat)))/100))
-
-chunked <- vector("list", length = length(idx_list))
-
-for (i in seq_along(idx_list)) {
-  chunked[[i]] <- dat[idx_list[[i]], , drop = FALSE]
-}
-
-str(chunked)
-
-plan("multisession", workers = 10)
-
-out <- chunked %>%
-  future_map(~lavPredict(fit1, newdata = .x,
-                         append.data = TRUE))
-
-n_rows <- nrow(dummy)
-
-out <- out %>%
-  future_map(as_tibble) %>%
-  future_map(~slice(.x, -(1:n_rows))) %>%
-  bind_rows()
+idata <-  item_data(fit5)
 
 
-parallel_lavPredict(fit1)
+item_plot(idata, latent = "F",
+          sort = "r2",
+          jitter_seed = 333)
 
-plot_cfa(fit1)
+.prepare_continuous(fit5, other_latents = "mean")
+
+.prepare_ordinal(fit5)
+
+psych::con
+
+
+load("data/ipip.RData")
+df
+
+table
+names(table)

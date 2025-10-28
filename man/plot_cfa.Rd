@@ -2,29 +2,66 @@
 % Please edit documentation in R/plot_cfa.R
 \name{plot_cfa}
 \alias{plot_cfa}
-\title{Interactive CFA/SEM diagram (single estimate type) using visNetwork}
+\title{Interactive CFA/SEM diagram via visNetwork}
 \usage{
 plot_cfa(fit, standardized = "none", include_r2 = TRUE)
 }
 \arguments{
-\item{fit}{A fitted lavaan/blavaan object.}
+\item{fit}{A fitted \code{lavaan} or \code{blavaan} model object.}
 
-\item{standardized}{Either logical (TRUE → "std.all") or one of
-c("none","std.all","std.lv"). Default "none".}
+\item{standardized}{Either a logical scalar or one of
+\code{c("none", "std.all", "std.lv")}.
+If \code{TRUE}, equivalent to \code{"std.all"}; default is \code{"none"}.}
 
-\item{include_r2}{Logical; include R-squared in node tooltips (computed
-from raw estimates via parameterEstimates with rsquare = TRUE). Default TRUE.}
+\item{include_r2}{Logical; if \code{TRUE}, include \eqn{R^2} values for
+dependent variables in node tooltips (computed from raw estimates via
+\code{\link[lavaan]{parameterEstimates}(rsquare = TRUE)}). Default \code{TRUE}.}
 }
 \value{
-A list of visNetwork htmlwidgets (one per group). For single-group,
-the list has length 1.
+A list of \pkg{visNetwork} \code{htmlwidget}s:
+\itemize{
+\item length 1 for single-group models,
+\item one element per group for multi-group models.
+}
 }
 \description{
-Builds interactive diagram(s) for a selected estimate type:
+Builds interactive confirmatory factor analysis (CFA) or structural equation
+model (SEM) diagram(s) for a selected type of estimates:
 \itemize{
-\item "none"   → raw (unstandardized)
-\item "std.all"
-\item "std.lv"
-Returns one widget per group (or a single widget if single-group).
+\item \code{"none"} – raw (unstandardized) estimates,
+\item \code{"std.all"} – fully standardized estimates,
+\item \code{"std.lv"} – standardized by latent variances.
 }
+For multi-group models, one interactive widget is produced per group; for
+single-group models, a single widget is returned.
+}
+\details{
+The diagram visualizes all latent and observed variables and connects them
+according to the fitted model. Edge thickness and opacity are scaled by the
+squared standardized estimate. Tooltips on edges display parameter estimates,
+confidence intervals, and significance tests. Tooltips on nodes summarize
+residual variances, intercepts, thresholds (if categorical), and optionally
+\eqn{R^2} values.
+
+The function relies on stable summaries from
+\code{\link{model_info}()} and \code{\link{parameter_estimates}()}, and uses
+internal helpers (e.g., \code{.fnum()}, \code{.ci()}) for compact formatting.
+}
+\examples{
+\dontrun{
+HS.model <- '
+  visual  =~ x1 + x2 + x3
+  textual =~ x4 + x5 + x6
+  speed   =~ x7 + x8 + x9
+'
+fit <- lavaan::cfa(
+  HS.model,
+  data = lavaan::HolzingerSwineford1939
+)
+plot_cfa(fit, standardized = "std.all")
+}
+
+}
+\seealso{
+\code{\link{model_info}}, \code{\link{parameter_estimates}},
 }

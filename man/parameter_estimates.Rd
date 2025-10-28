@@ -2,7 +2,7 @@
 % Please edit documentation in R/parameter_estimates.R
 \name{parameter_estimates}
 \alias{parameter_estimates}
-\title{Parameter estimates from lavaan/blavaan with a unified schema}
+\title{Parameter estimates from lavaan with a unified schema}
 \usage{
 parameter_estimates(
   fit,
@@ -30,22 +30,30 @@ standardized output is requested, the estimate is in column \code{est}
 \description{
 Extracts raw or standardized coefficients from a fitted lavaan/blavaan model,
 always ensuring a \code{group} column is present (set to 1 for single-group models).
+Internally, the function relies on \code{lavaan::parameterEstimates()} for raw
+estimates and \code{lavaan::standardizedSolution()} for standardized coefficients.
+}
+\details{
+This wrapper harmonizes the output structure between raw and standardized
+estimates, renames standardized columns to a unified schema (e.g., \code{est}
+instead of \code{est.std}), and ensures that a \code{group} column is always included.
+When \code{include_r2 = TRUE}, R² values are appended for each endogenous variable
+if available in the model.
 }
 \examples{
-\dontrun{
-  library(lavaan)
-  HS.model <- ' visual  =~ x1 + x2 + x3
-                textual =~ x4 + x5 + x6
-                speed   =~ x7 + x8 + x9 '
-  fit <- cfa(HS.model, data = HolzingerSwineford1939)
+HS.model <- ' visual  =~ x1 + x2 + x3
+              textual =~ x4 + x5 + x6
+              speed   =~ x7 + x8 + x9 '
+fit <- lavaan::cfa(HS.model,
+                   data = lavaan::HolzingerSwineford1939)
 
-  # Raw estimates with R2
-  pe  <- parameter_estimates(fit)
+# Raw estimates with R2
+pe  <- parameter_estimates(fit)
 
-  # Standardized (std.all)
-  pes <- parameter_estimates(fit, standardized = TRUE)
+# Standardized (std.all)
+pes <- parameter_estimates(fit, standardized = TRUE)
 
-  # Standardized (std.lv)
-  pes_lv <- parameter_estimates(fit, standardized = "std.lv")
-}
+# Standardized (std.lv)
+pes_lv <- parameter_estimates(fit, standardized = "std.lv")
+
 }

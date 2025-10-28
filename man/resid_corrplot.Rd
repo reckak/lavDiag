@@ -2,10 +2,11 @@
 % Please edit documentation in R/resid_corrplot.R
 \name{resid_corrplot}
 \alias{resid_corrplot}
-\title{Corrplot of residual correlations (Bentler-type "cor")}
+\title{Corrplot of residual correlations (configurable type)}
 \usage{
 resid_corrplot(
   fit,
+  type = c("cor.bentler", "cor", "cor.sample", "cov", "cov.sample"),
   order = c("original", "AOE", "FPC", "hclust", "alphabet"),
   hclust.method = c("complete", "ward", "ward.D", "ward.D2", "single", "average",
     "mcquitty", "median", "centroid"),
@@ -17,16 +18,23 @@ resid_corrplot(
 \arguments{
 \item{fit}{A fitted \code{lavaan} object.}
 
-\item{order}{One of \code{c("original","AOE","FPC","hclust","alphabet")}.}
+\item{type}{Character; which type of residual correlation/covariance to plot.
+One of \code{c("cor.bentler", "cor", "cor.sample", "cov", "cov.sample")}.
+Default \code{"cor.bentler"}.}
+
+\item{order}{One of \code{c("original","AOE","FPC","hclust","alphabet")} controlling
+the variable ordering in the plot.}
 
 \item{hclust.method}{One of
 \code{c("complete","ward","ward.D","ward.D2","single","average","mcquitty","median","centroid")}.}
 
-\item{common_scale}{Logical; use common symmetric color range across groups? Default \code{TRUE}.}
+\item{common_scale}{Logical; use a common symmetric color range across groups?
+Default \code{TRUE}.}
 
 \item{title_prefix}{Optional character prefix for multi-group plot titles.}
 
-\item{record}{Logical; if \code{TRUE}, return recorded plot(s) via \code{recordPlot()}. Default \code{FALSE}.}
+\item{record}{Logical; if \code{TRUE}, return recorded plot(s) via \code{recordPlot()}.
+Default \code{FALSE}.}
 }
 \value{
 \itemize{
@@ -35,11 +43,19 @@ resid_corrplot(
 }
 }
 \description{
-Draw corrplot(s) of residual correlations from a fitted \code{lavaan} model.
-For multi-group models you can harmonize the color scale across groups via
-\code{common_scale = TRUE}. Produces base plots.
+Draw corrplot(s) of residual correlations from a fitted \pkg{lavaan} model.
+The \code{type} argument allows selecting which residual correlation or covariance
+metric to visualize (e.g., Bentler, Pearson, or sample-based). For multi-group
+models you can harmonize the color scale across groups via \code{common_scale = TRUE}.
+Produces base plots.
 }
 \details{
+Uses corrplot::corrplot.mixed() for rendering. When common_scale = TRUE,
+the color legend is harmonized across groups by taking a common symmetric range
+(−L, L) with \eqn{L = max(|values|)} across all groups; otherwise each
+group panel uses its own range. The is.corr flag is set automatically based
+on type (TRUE when type starts with "cor").
+
 If \code{record = TRUE}, returns a recorded plot object (single-group) or a named
 list of recorded plots (multi-group) created with \code{grDevices::recordPlot()}.
 You can later replay them with \code{grDevices::replayPlot()}.
@@ -51,11 +67,26 @@ HS.model <- '
   speed   =~ x7 + x8 + x9
 '
 fit <- lavaan::cfa(HS.model, data = lavaan::HolzingerSwineford1939)
-# draw only:
-resid_corrplot(fit, order = "hclust")
-# capture plot object:
-rec <- resid_corrplot(fit, order = "hclust", record = TRUE)
-# later:
+
+# Draw Bentler-type residual correlations
+resid_corrplot(fit, type = "cor.bentler", order = "hclust")
+
+# Draw standard residual correlations
+resid_corrplot(fit, type = "cor")
+
+# Capture plot object for later replay
+rec <- resid_corrplot(fit, type = "cor.bentler", order = "hclust", record = TRUE)
 if (interactive()) grDevices::replayPlot(rec)
 
+# Multi-group demo of common_scale and title_prefix
+fit_mg <- lavaan::cfa(HS.model, data = lavaan::HolzingerSwineford1939, group = "school")
+# harmonized color scale across groups
+resid_corrplot(fit_mg, type = "cor.bentler", common_scale = TRUE,  title_prefix = "School: ")
+# per-group color scales
+resid_corrplot(fit_mg, type = "cor.bentler", common_scale = FALSE, title_prefix = "School: ")
+
+}
+\seealso{
+\code{\link{resid_cor}},' \code{\link{resid_qq}}, \code{\link{hopper_plot}},
+\code{\link[corrplot]{corrplot.mixed}},
 }

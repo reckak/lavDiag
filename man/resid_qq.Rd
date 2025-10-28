@@ -22,11 +22,17 @@ Draws a Q-Q plot for residual correlation z-statistics returned by
 each group. The \code{n} most extreme pairs (by |z|) are labelled.
 }
 \details{
+The z-statistics are expected to follow approximately a standard normal
+distribution N(0, 1) under correct model specification, so systematic
+deflections from the diagonal in the Q-Q plot indicate potential model
+misfit or localized residual dependencies.
+
 If \code{z} is not available from \code{lavaan::lavResiduals()}, the
 function attempts to compute it as \code{cor / se}. If neither \code{z}
 nor \code{se} are available, the function stops with an informative error.
 }
 \examples{
+# Single-group example
 HS.model <- '
   visual  =~ x1 + x2 + x3
   textual =~ x4 + x5 + x6
@@ -35,4 +41,13 @@ HS.model <- '
 fit <- lavaan::cfa(HS.model, data = lavaan::HolzingerSwineford1939)
 resid_qq(fit, n = 5)
 
+# Multi-group example (groups by "school")
+fit_mg <- lavaan::cfa(HS.model,
+                      data  = lavaan::HolzingerSwineford1939,
+                      group = "school")
+resid_qq(fit_mg, n = 7, title = "Residual z Q-Q by group")
+
+}
+\seealso{
+\code{\link{resid_cor}}, \code{\link{resid_corrplot}}, \code{\link{hopper_plot}}
 }

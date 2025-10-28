@@ -2,19 +2,74 @@
 % Please edit documentation in R/model_info.R
 \name{model_info}
 \alias{model_info}
-\title{Summarize basic model properties from a lavaan/blavaan fit}
+\title{Extract compact, robust meta-information about a lavaan/blavaan fit}
 \usage{
 model_info(fit)
 }
 \arguments{
-\item{fit}{A fitted lavaan or blavaan object.}
+\item{fit}{A fitted \code{lavaan} or \code{blavaan} model object.}
 }
 \value{
-A named list with model properties (groups, categorical, multilevel, etc.).
+A named \code{list} with the following elements:
+\describe{
+\item{\code{converged}}{Logical or \code{NA}; model convergence flag.}
+\item{\code{has_meanstructure}}{Logical or \code{NA}; whether a mean structure was estimated.}
+\item{\code{estimator}}{Character or \code{NA}; e.g., \code{"ML"}, \code{"WLSMV"}, \code{"Bayes"}.}
+\item{\code{parameterization}}{Character or \code{NA}; e.g., \code{"delta"}, \code{"theta"}.}
+
+\item{\code{is_single_group}}{Logical; \code{TRUE} for single-group models.}
+\item{\code{n_groups}}{Integer or \code{NA}; number of groups.}
+\item{\code{group_var}}{Character or \code{NULL}; name of the grouping variable.}
+\item{\code{group_labels}}{Character vector or \code{NULL}; group labels in model order.}
+\item{\code{n_obs}}{Per-group sample sizes (vector/list) or \code{NULL}.}
+
+\item{\code{observed_variables}}{Character; observed indicators (ov) in model order.}
+\item{\code{latent_variables}}{Character; latent variables (lv) in model order.}
+\item{\code{ov_ordinal}}{Character; subset of ordinal observed variables.}
+\item{\code{ov_continuous}}{Character; observed variables not in \code{ov_ordinal}.}
+
+\item{\code{is_categorical}}{Logical or \code{NA}; lavaan-level categorical flag.}
+
+\item{\code{is_multilevel}}{Logical; \code{TRUE} if a multilevel structure is detected.}
+\item{\code{n_levels}}{Integer or \code{NA}; number of levels.}
+\item{\code{cluster_var}}{Character vector or \code{NULL}; clustering variable(s), if any.}
+\item{\code{n_clusters}}{Integer or \code{NA}; number of clusters (if available).}
+\item{\code{average_cluster_size}}{Numeric or \code{NA}; average cluster size (if available).}
+}
 }
 \description{
-Summarize basic model properties from a lavaan/blavaan fit
+Lightweight helper that queries a fitted \pkg{lavaan}/\pkg{blavaan} object
+for commonly needed model metadata (grouping, variables, estimator,
+parameterization, categorical/multilevel flags, etc.). All lookups are
+wrapped in \code{tryCatch()}, so the function returns informative \code{NA}/\code{NULL}
+values instead of failing when particular slots are unavailable.
+}
+\details{
+The function relies on stable \code{\link[lavaan]{lavInspect}} /
+\code{\link[lavaan]{lavNames}} queries with minimal post-processing:
+\itemize{
+\item Grouping: number of groups, labels, grouping variable (if any), and per-group sample sizes.
+\item Variables: observed (ov) and latent (lv) in model order; observed split into
+ordinal vs. continuous using \code{lavNames(type = "ov.ord")}.
+\item Estimator and parameterization: taken from \code{lavInspect(fit, "options")}.
+\item Multilevel summary: coarse flags derived from \code{"nlevels"} / \code{"cluster"}
+and related quantities (clusters, average cluster size).
+}
+All fields are safe to access: if a query is not applicable (e.g., single-group
+model has no \code{"group"}), the corresponding element is set to \code{NA},
+\code{NULL}, or a sensible default.
 }
 \examples{
-# info <- model_info(fit)
+HS.model <- 'visual  =~ x1 + x2 + x3
+             textual =~ x4 + x5 + x6
+             speed   =~ x7 + x8 + x9'
+fit <- lavaan::cfa(HS.model,
+                   data = lavaan::HolzingerSwineford1939,
+                   group = 'school')
+model_info(fit)
+
+}
+\seealso{
+\code{\link{prepare}}, \code{\link{augment}}, \code{\link{item_data}};
+\code{\link[lavaan]{lavInspect}}, \code{\link[lavaan]{lavNames}}
 }

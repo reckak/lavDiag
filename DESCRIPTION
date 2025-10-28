@@ -1,32 +1,54 @@
 Package: lavDiag
 Title: Latent Variable Models Diagnostics
-Version: 0.0.0.9000
+Version: 0.1.0
 Authors@R: 
     person("Karel", "Rečka", , "reckak@muni.cz", role = c("aut", "cre"))
-Description: Provides diagnostics for latent variable models fitted in 'lavaan'.
+Description: Diagnostics and visualization tools for latent variable models
+    fitted with 'lavaan'. The package provides fast, parallel-safe factor-score
+    prediction ("lavPredict_parallel()"), data augmentation with model
+    predictions, residuals, delta-method standard errors and confidence
+    intervals ("augment()"), and model-based latent grids for continuous,
+    ordinal, or mixed indicators ("prepare()"). It offers item-level empirical
+    versus model curve comparison using generalized additive models for both
+    continuous and ordinal indicators ("item_data()", "item_plot()"), residual
+    diagnostics including residual correlation tables and plots ("resid_cor()",
+    "resid_corrplot()"), and Q-Q checks of residual z-statistics ("resid_qq()").
+    Additional utilities include compact model metadata extraction
+    ("model_info()"), a unified schema for parameter estimates
+    ("parameter_estimates()"), and simple CFA diagram helpers ("plot_cfa()",
+    plus network visualization helpers). Functions support single- and
+    multi-group models, robust column naming, and sensible defaults. Heavy
+    computations are parallelized via 'future'/'furrr'; empirical curves use
+    'mgcv'; correlation plots rely on 'corrplot'.
 License: MIT + file LICENSE
+URL: https://github.com/reckak/lavDiag
+BugReports: https://github.com/reckak/lavDiag/issues
 Encoding: UTF-8
+Language: en-US
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Depends:
     R (>= 4.1.0)
 Imports:
-    lavaan,
+    corrplot (>= 0.90),
     dplyr,
-    purrr,
-    tidyr,
-    tibble,
-    igraph,
-    visNetwork,
-    rlang,
+    furrr,
+    future,
+    future.apply,
     ggplot2,
     ggrepel,
-    tidyselect,
+    igraph,
+    lavaan,
+    mgcv,
+    purrr,
+    rlang,
     stringr,
-    corrplot (>= 0.90),
-    future,
-    furrr
+    tibble,
+    tidyselect,
+    tidyr,
+    vctrs,
+    visNetwork,
+    withr
 Suggests: 
-    testthat (>= 3.0.0),
+    testthat (>= 3.0.0)
 Config/testthat/edition: 3
-
