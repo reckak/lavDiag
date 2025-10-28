@@ -20,7 +20,7 @@
 #'   \item Residual correlations are first obtained as (group-wise) symmetric matrices.
 #'   \item Only the \emph{upper triangle without the diagonal} is kept, using a logic
 #'         equivalent to \code{mat[upper.tri(mat, diag = FALSE)]}.
-#'   \item Variable pairs are canonicalized via \code{v1 <- pmin(i, j)}, \code{v2 <- pmax(i, j)}
+#'   \item Variable pairs are created via \code{v1 <- pmin(i, j)}, \code{v2 <- pmax(i, j)}
 #'         so that each pair appears once regardless of original order.
 #'   \item A human-readable \code{pair} label is created as \code{paste0(v1, "-", v2)}.
 #'   \item The result is sorted stably by \code{group} (if present) and \code{pair} for

@@ -2,7 +2,7 @@
 #'
 #' Parallel, ordinal-aware, and mixed-safe implementation of `lavaan::lavPredict()`.
 #'
-#' ## Model-type behaviour
+#' ## Model-type behavior
 #' - **Purely ordinal models:**
 #'   Optionally reduces duplicated work via `dplyr::distinct()` on full rows.
 #'   Prepends “all-categories” dummy rows per group to stabilize chunk predictions.
@@ -31,7 +31,7 @@
 #' attribute `fs_n_corrected` is added.  The internal `"mixed"` rule is always
 #' reported as `"auto"` for user clarity.
 #'
-#' @param fit lavaan or blavaan model object.
+#' @param fit lavaan model object.
 #' @param workers Integer; number of parallel workers
 #'   (default = `max(1, parallel::detectCores() − 1)`).
 #' @param plan One of `"auto"`, `"multisession"`, `"multicore"`, `"sequential"`.

@@ -12,7 +12,7 @@ parameter_estimates(
 )
 }
 \arguments{
-\item{fit}{A fitted \code{lavaan} or \code{blavaan} object.}
+\item{fit}{A fitted \code{lavaan} object.}
 
 \item{level}{Confidence level for intervals (default \code{0.95}).}
 
@@ -28,7 +28,7 @@ standardized output is requested, the estimate is in column \code{est}
 (renamed from \code{est.std} for consistency).
 }
 \description{
-Extracts raw or standardized coefficients from a fitted lavaan/blavaan model,
+Extracts raw or standardized coefficients from a fitted lavaan model,
 always ensuring a \code{group} column is present (set to 1 for single-group models).
 Internally, the function relies on \code{lavaan::parameterEstimates()} for raw
 estimates and \code{lavaan::standardizedSolution()} for standardized coefficients.

@@ -35,7 +35,7 @@
 #' @param sort_dir Direction of sort if `sort != "none"`; one of `"auto"`,
 #'   `"asc"`, `"desc"`. `auto` sorts R²-like metrics descending and error metrics ascending.
 #'
-#' @return A `ggplot2` object (single-group) or a facetted `ggplot2` object (multi-group).
+#' @return A `ggplot2` object (single-group) or a faceted `ggplot2` object (multi-group).
 #'   The plot is returned (and printed if not assigned) and can be further modified with `+`.
 #'
 #' @examples

@@ -8,7 +8,7 @@
 #' @param title Optional plot title.
 #' @param n_max Number of variable pairs to show (per group when multi-group).
 #' @param sep   Separator used by \code{.reorder_within()} for multi-group axis
-#'   labelling. You usually don't need to change this.
+#'   labeling. You usually don't need to change this.
 #'
 #' @return A \code{ggplot2} object.
 #' @seealso \link{resid_cor}, \link{resid_corrplot}

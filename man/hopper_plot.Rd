@@ -14,7 +14,7 @@ hopper_plot(fit, title = NULL, n_max = 15, sep = "___")
 \item{n_max}{Number of variable pairs to show (per group when multi-group).}
 
 \item{sep}{Separator used by \code{.reorder_within()} for multi-group axis
-labelling. You usually don't need to change this.}
+labeling. You usually don't need to change this.}
 }
 \value{
 A \code{ggplot2} object.
