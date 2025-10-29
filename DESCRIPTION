@@ -15,7 +15,7 @@ Description: Diagnostics and visualization tools for latent variable models
     "resid_corrplot()"), and Q-Q checks of residual z-statistics ("resid_qq()").
     Additional utilities include compact model metadata extraction
     ("model_info()"), a unified schema for parameter estimates
-    ("parameter_estimates()"), and simple confirmatory factor analysis (CFA) 
+    ("parameter_estimates()"), and simple confirmatory factor analysis 
     helpers ("plot_cfa()", plus network visualization helpers). Functions 
     support single- and multi-group models, robust column naming, and sensible 
     defaults. Heavy computations are parallelized via 'future'/'furrr'; 
