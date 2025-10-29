@@ -19,9 +19,9 @@
 #' * `"auto"` (default): per-latent mixed metric — uses `"z_by_se"` where SE columns exist
 #'   for that latent, otherwise robust `"mad"`. A row is flagged if **any** latent exceeds
 #'   the threshold; the maximum across latents is used.
-#' * `"z_by_se"` – flags rows where `abs(FS) / pmax(SE, eps) > extreme_k` for any latent.
-#' * `"mad"` – robust Z: `abs(FS − median)/(1.4826 × MAD) > extreme_k`.
-#' * `"abs"` – simple absolute threshold: `abs(FS) > extreme_k`.
+#' * `"z_by_se"`: flags rows where `abs(FS) / pmax(SE, eps) > extreme_k` for any latent.
+#' * `"mad"`: robust Z: `abs(FS - median)/(1.4826 × MAD) > extreme_k`.
+#' * `"abs"`: simple absolute threshold: `abs(FS) > extreme_k`.
 #'
 #' The re-scoring uses the first `fallback_method` supplied (default `"EMB"`),
 #' and then automatically retries the other (e.g. `"EBM"`) if needed.
@@ -33,7 +33,7 @@
 #'
 #' @param fit lavaan model object.
 #' @param workers Integer; number of parallel workers
-#'   (default = `max(1, parallel::detectCores() − 1)`).
+#'   (default = `max(1, parallel::detectCores() - 1)`).
 #' @param plan One of `"auto"`, `"multisession"`, `"multicore"`, `"sequential"`.
 #'   `"auto"` selects `"multisession"` cross-platform.
 #' @param chunk_size Optional integer; number of rows per chunk (default computed adaptively).

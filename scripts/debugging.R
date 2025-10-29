@@ -243,3 +243,6 @@ df
 
 table
 names(table)
+
+file.info(tinytex:::win_app_dir('TinyTeX', 'bin', 'win32', 'pdflatex.exe'))
+

@@ -9,7 +9,7 @@
 #' @details
 #' Uses corrplot::corrplot.mixed() for rendering. When common_scale = TRUE,
 #' the color legend is harmonized across groups by taking a common symmetric range
-#' (−L, L) with \eqn{L = max(|values|)} across all groups; otherwise each
+#' (-L, L) with \eqn{L = max(|values|)} across all groups; otherwise each
 #' group panel uses its own range. The is.corr flag is set automatically based
 #' on type (TRUE when type starts with "cor").
 #'

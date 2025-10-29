@@ -2,7 +2,7 @@ Package: lavDiag
 Title: Latent Variable Models Diagnostics
 Version: 0.1.0
 Authors@R: 
-    person("Karel", "Rečka", , "reckak@muni.cz", role = c("aut", "cre"))
+    person("Karel", "Rečka", , "reckak@mail.muni.cz", role = c("aut", "cre"))
 Description: Diagnostics and visualization tools for latent variable models
     fitted with 'lavaan'. The package provides fast, parallel-safe factor-score
     prediction ("lavPredict_parallel()"), data augmentation with model
@@ -15,11 +15,11 @@ Description: Diagnostics and visualization tools for latent variable models
     "resid_corrplot()"), and Q-Q checks of residual z-statistics ("resid_qq()").
     Additional utilities include compact model metadata extraction
     ("model_info()"), a unified schema for parameter estimates
-    ("parameter_estimates()"), and simple CFA diagram helpers ("plot_cfa()",
-    plus network visualization helpers). Functions support single- and
-    multi-group models, robust column naming, and sensible defaults. Heavy
-    computations are parallelized via 'future'/'furrr'; empirical curves use
-    'mgcv'; correlation plots rely on 'corrplot'.
+    ("parameter_estimates()"), and simple confirmatory factor analysis (CFA) 
+    helpers ("plot_cfa()", plus network visualization helpers). Functions 
+    support single- and multi-group models, robust column naming, and sensible 
+    defaults. Heavy computations are parallelized via 'future'/'furrr'; 
+    empirical curves use 'mgcv'; correlation plots rely on 'corrplot'.
 License: MIT + file LICENSE
 URL: https://github.com/reckak/lavDiag
 BugReports: https://github.com/reckak/lavDiag/issues
@@ -50,5 +50,6 @@ Imports:
     visNetwork,
     withr
 Suggests: 
+    spelling,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
