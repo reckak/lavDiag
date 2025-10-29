@@ -85,7 +85,7 @@ the metric is averaged across groups.}
 \code{"asc"}, \code{"desc"}. \code{auto} sorts R²-like metrics descending and error metrics ascending.}
 }
 \value{
-A \code{ggplot2} object (single-group) or a facetted \code{ggplot2} object (multi-group).
+A \code{ggplot2} object (single-group) or a faceted \code{ggplot2} object (multi-group).
 The plot is returned (and printed if not assigned) and can be further modified with \code{+}.
 }
 \description{

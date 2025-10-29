@@ -52,7 +52,7 @@ Default tries \code{"EMB"} first, then \code{"EBM"} if that fails.}
 \item{diagnostics}{Logical; if \code{TRUE}, attach diagnostic columns and attribute \code{fs_n_corrected}.}
 
 \item{workers}{Integer; number of parallel workers
-(default = \verb{max(1, parallel::detectCores() − 1)}).}
+(default = \code{max(1, parallel::detectCores() - 1)}).}
 
 \item{plan}{One of \code{"auto"}, \code{"multisession"}, \code{"multicore"}, \code{"sequential"}.
 \code{"auto"} selects \code{"multisession"} cross-platform.}
@@ -84,7 +84,7 @@ containing predicted factor scores and optionally SEs and diagnostics.
 Parallel, ordinal-aware, and mixed-safe implementation of \code{lavaan::lavPredict()}.
 }
 \details{
-\subsection{Model-type behaviur}{
+\subsection{Model-type behavior}{
 \itemize{
 \item \strong{Purely ordinal models:}
 Optionally reduces duplicated work via \code{dplyr::distinct()} on full rows.
@@ -104,9 +104,9 @@ The flagging rule is controlled by \code{extreme_rule}:
 \item \code{"auto"} (default): per-latent mixed metric — uses \code{"z_by_se"} where SE columns exist
 for that latent, otherwise robust \code{"mad"}. A row is flagged if \strong{any} latent exceeds
 the threshold; the maximum across latents is used.
-\item \code{"z_by_se"} – flags rows where \code{abs(FS) / pmax(SE, eps) > extreme_k} for any latent.
-\item \code{"mad"} – robust Z: \verb{abs(FS − median)/(1.4826 × MAD) > extreme_k}.
-\item \code{"abs"} – simple absolute threshold: \code{abs(FS) > extreme_k}.
+\item \code{"z_by_se"}: flags rows where \code{abs(FS) / pmax(SE, eps) > extreme_k} for any latent.
+\item \code{"mad"}: robust Z: \verb{abs(FS - median)/(1.4826 × MAD) > extreme_k}.
+\item \code{"abs"}: simple absolute threshold: \code{abs(FS) > extreme_k}.
 }
 
 The re-scoring uses the first \code{fallback_method} supplied (default \code{"EMB"}),
