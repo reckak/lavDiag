@@ -7,3 +7,4 @@
 ^item_plots$
 ^prepare$
 ^.github
+^cran-comments\.md$
