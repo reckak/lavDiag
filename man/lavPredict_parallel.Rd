@@ -118,3 +118,34 @@ attribute \code{fs_n_corrected} is added.  The internal \code{"mixed"} rule is a
 reported as \code{"auto"} for user clarity.
 }
 }
+\examples{
+\donttest{
+# Convert selected indicators to ordinal
+ord_items <- paste0("x", 1:9)
+HS_ord <- lavaan::HolzingerSwineford1939
+for (v in ord_items) {
+  q <- stats::quantile(HS_ord[[v]], probs = seq(0, 1, length.out = 6), na.rm = TRUE)
+  q <- unique(q)  # guard against duplicate cut points
+  HS_ord[[v]] <- as.ordered(cut(HS_ord[[v]], breaks = q, include.lowest = TRUE))
+}
+
+HS.model <- '
+  visual  =~ x1 + x2 + x3
+  textual =~ x4 + x5 + x6
+  speed   =~ x7 + x8 + x9
+'
+
+# Fit ordinal CFA model
+fit_ord <- lavaan::cfa(
+  HS.model,
+  data             = HS_ord,
+  ordered          = ord_items,
+  estimator        = "WLSMV",
+  parameterization = "delta",
+  meanstructure    = TRUE
+)
+
+# Parallel prediction with automatic extreme-score handling
+lavPredict_parallel(fit_ord, correct_extremes = TRUE)
+}
+}
