@@ -112,7 +112,7 @@ fit <- lavaan::cfa(HS.model,
                    meanstructure = TRUE)
 prepare(fit)
 
-\dontrun{
+\donttest{
 # --- Ordinal example (discretize by quantiles; 5 ordered categories) -----
 ord_items <- paste0("x", 1:9)
 HS_ord <- lavaan::HolzingerSwineford1939

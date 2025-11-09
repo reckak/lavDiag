@@ -142,10 +142,10 @@ fit <- lavaan::cfa(HS.model,
                    meanstructure = TRUE)
 augment(fit)
 
-\dontrun{
+\donttest{
 # --- Ordinal example (discretize by quantiles; 5 ordered categories) -------
 ord_items <- paste0("x", 1:9)
-HS_ord <- HolzingerSwineford1939
+HS_ord <- lavaan::HolzingerSwineford1939
 for (v in ord_items) {
   q <- stats::quantile(HS_ord[[v]], probs = seq(0, 1, length.out = 6), na.rm = TRUE)
   q <- unique(q)  # guard against duplicate cut points
@@ -164,7 +164,7 @@ augment(fit_ord)
 
 # --- Mixed example (x1–x3 ordinal, others continuous) ----------------------
 mix_ord <- c("x1","x2","x3")
-HS_mix  <- HolzingerSwineford1939
+HS_mix  <- lavaan::HolzingerSwineford1939
 for (v in mix_ord) {
   q <- stats::quantile(HS_mix[[v]], probs = seq(0, 1, length.out = 6), na.rm = TRUE)
   q <- unique(q)

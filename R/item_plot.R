@@ -39,7 +39,7 @@
 #'   The plot is returned (and printed if not assigned) and can be further modified with `+`.
 #'
 #' @examples
-#' \dontrun{
+#' \donttest{
 #' HS.model <- '
 #'   visual  =~ x1 + x2 + x3
 #'   textual =~ x4 + x5 + x6
