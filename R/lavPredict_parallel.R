@@ -65,7 +65,7 @@
 #' containing predicted factor scores and optionally SEs and diagnostics.
 #'
 #' @examples
-#' \dontrun{
+#' \donttest{
 #' # Convert selected indicators to ordinal
 #' ord_items <- paste0("x", 1:9)
 #' HS_ord <- lavaan::HolzingerSwineford1939
@@ -74,6 +74,12 @@
 #'   q <- unique(q)  # guard against duplicate cut points
 #'   HS_ord[[v]] <- as.ordered(cut(HS_ord[[v]], breaks = q, include.lowest = TRUE))
 #' }
+#'
+#' #' HS.model <- '
+#'   visual  =~ x1 + x2 + x3
+#'   textual =~ x4 + x5 + x6
+#'   speed   =~ x7 + x8 + x9
+#' '
 #'
 #' # Fit ordinal CFA model
 #' fit_ord <- lavaan::cfa(
@@ -88,6 +94,7 @@
 #' # Parallel prediction with automatic extreme-score handling
 #' lavPredict_parallel(fit_ord, correct_extremes = TRUE)
 #' }
+#' @export
 lavPredict_parallel <- function(fit,
                                 method             = "ml",
                                 correct_extremes   = TRUE,

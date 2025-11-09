@@ -95,7 +95,7 @@ latent factor (x-axis) and all items that load on it (y-axis). Works for
 continuous, ordinal, and mixed models; supports single- and multi-group fits.
 }
 \examples{
-\dontrun{
+\donttest{
 HS.model <- '
   visual  =~ x1 + x2 + x3
   textual =~ x4 + x5 + x6
