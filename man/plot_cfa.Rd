@@ -48,7 +48,7 @@ The function relies on stable summaries from
 internal helpers (e.g., \code{.fnum()}, \code{.ci()}) for compact formatting.
 }
 \examples{
-\dontrun{
+\donttest{
 HS.model <- '
   visual  =~ x1 + x2 + x3
   textual =~ x4 + x5 + x6
