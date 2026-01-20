@@ -96,7 +96,6 @@
 #' }
 #' @export
 lavPredict_parallel <- function(fit,
-                                transform          = FALSE,
                                 method             = "ml",
                                 correct_extremes   = TRUE,
                                 extreme_rule       = c("auto","abs","z_by_se","mad"),
@@ -115,8 +114,7 @@ lavPredict_parallel <- function(fit,
                                 prefix_se_fs       = ".se_",
                                 distinct           = c("never","auto","always"),
                                 distinct_threshold = 5e4,
-                                ...
-) {
+                                ...) {
   fallback_method <- match.arg(fallback_method)
   extreme_rule    <- match.arg(extreme_rule)
   extreme_by      <- match.arg(extreme_by)
@@ -147,86 +145,6 @@ lavPredict_parallel <- function(fit,
 
   ov_ord <- ov_ord[ov_ord %in% names(dat_original)]
 
-  # Capture ... once and prevent duplicates of reserved arguments
-  dots <- rlang::dots_list(...)
-  if ("transform" %in% names(dots)) {
-    warning("Argument 'transform' should be supplied via lavPredict_parallel(transform=...). Ignoring duplicate 'transform' in ...")
-    dots$transform <- NULL
-  }
-
-  # For ordinal models, lavaan may ignore transform=TRUE (or it may have no effect
-  # due to identification). If requested and we are returning LV scores, apply a
-  # post-hoc moment-matching transform per group.
-  type_arg <- if ("type" %in% names(dots)) as.character(dots$type) else "lv"
-
-  .transform_scores <- function(fs_mat, mu_target, Sig_target) {
-    fs_mat <- as.matrix(fs_mat)
-    k <- ncol(fs_mat)
-    if (!k) return(fs_mat)
-
-    mu_s <- colMeans(fs_mat, na.rm = TRUE)
-    C <- stats::cov(fs_mat, use = "pairwise.complete.obs")
-
-    if (k == 1L) {
-      sd_s <- sqrt(as.numeric(C))
-      sd_t <- sqrt(as.numeric(Sig_target))
-      if (!is.finite(sd_s) || sd_s <= 0 || !is.finite(sd_t) || sd_t <= 0) return(fs_mat)
-      z <- (fs_mat - mu_s) / sd_s
-      out <- z * sd_t + as.numeric(mu_target)
-      colnames(out) <- colnames(fs_mat)
-      return(out)
-    }
-
-    U <- tryCatch(chol(C), error = function(e) NULL)
-    V <- tryCatch(chol(Sig_target), error = function(e) NULL)
-    if (is.null(U) || is.null(V)) return(fs_mat)
-
-    z <- sweep(fs_mat, 2, mu_s, "-") %*% solve(U)
-    out <- z %*% V
-    out <- sweep(out, 2, as.numeric(mu_target), "+")
-    colnames(out) <- colnames(fs_mat)
-    out
-  }
-
-  .maybe_transform_out <- function(out_tbl) {
-    if (!isTRUE(transform) || !identical(type_arg, "lv")) return(out_tbl)
-
-    lv_cols <- intersect(
-      tryCatch(lavaan::lavNames(fit, type = "lv"), error = function(e) character()),
-      names(out_tbl)
-    )
-    if (!length(lv_cols)) return(out_tbl)
-
-    mu_lv  <- tryCatch(lavaan::lavInspect(fit, "mean.lv"), error = function(e) NULL)
-    Sig_lv <- tryCatch(lavaan::lavInspect(fit, "cov.lv"),  error = function(e) NULL)
-    if (is.null(mu_lv) || is.null(Sig_lv)) return(out_tbl)
-
-    if (isTRUE(is_mg) && gvar %in% names(out_tbl) && is.list(mu_lv) && is.list(Sig_lv)) {
-      out_tbl <- out_tbl |>
-        dplyr::group_by(.data[[gvar]]) |>
-        dplyr::group_modify(function(df_g, key) {
-          gl  <- as.character(key[[gvar]][1])
-          mu_t  <- mu_lv[[gl]]
-          Sig_t <- Sig_lv[[gl]]
-          if (is.null(mu_t) || is.null(Sig_t)) return(df_g)
-
-          mu_t  <- mu_t[lv_cols]
-          Sig_t <- as.matrix(Sig_t)[lv_cols, lv_cols, drop = FALSE]
-          df_g[lv_cols] <- .transform_scores(df_g[lv_cols], mu_t, Sig_t)
-          df_g
-        }) |>
-        dplyr::ungroup()
-      return(out_tbl)
-    }
-
-    mu_t  <- if (is.list(mu_lv)) mu_lv[[1]] else mu_lv
-    Sig_t <- if (is.list(Sig_lv)) Sig_lv[[1]] else Sig_lv
-    mu_t  <- mu_t[lv_cols]
-    Sig_t <- as.matrix(Sig_t)[lv_cols, lv_cols, drop = FALSE]
-    out_tbl[lv_cols] <- .transform_scores(out_tbl[lv_cols], mu_t, Sig_t)
-    out_tbl
-  }
-
   if (!has_ord || workers <= 1L) {
     args_base <- list(
       object      = fit,
@@ -234,23 +152,22 @@ lavPredict_parallel <- function(fit,
       append.data = TRUE,
       assemble    = TRUE,
       method      = method,
-      transform   = FALSE
+      transform   = TRUE
+
     )
     if (is_mg) args_base$drop.list.single.group <- FALSE
-    args_base <- c(args_base, dots)
+    args_base <- c(args_base, rlang::dots_list(...))
     base <- do.call(lavaan::lavPredict, args_base)
     out  <- tibble::as_tibble(base)
-
-
 
     if (isTRUE(se)) {
       lv_names <- tryCatch(lavaan::lavNames(fit, type = "lv"), error = function(e) character())
       se_attr  <- tryCatch(attr(base, "se"), error = function(e) NULL)
       if (is.null(se_attr)) {
         args_se <- list(object = fit, newdata = dat_original, append.data = FALSE, assemble = TRUE, se = TRUE,
-                        transform   = FALSE)
+                        transform = TRUE)
         if (is_mg) args_se$drop.list.single.group <- FALSE
-        args_se <- c(args_se, dots)
+        args_se <- c(args_se, rlang::dots_list(...))
         base_se <- tryCatch(do.call(lavaan::lavPredict, args_se), error = function(e) NULL)
         se_attr <- if (!is.null(base_se)) attr(base_se, "se") else NULL
       }
@@ -351,9 +268,9 @@ lavPredict_parallel <- function(fit,
       pred_ok <- NULL; last_err <- NULL
       for (mth in try_methods) {
         args_f <- list(object = fit, newdata = nd, append.data = TRUE, assemble = TRUE, method = mth,
-                       transform = FALSE)
+                       transform = TRUE)
         if (is_mg) args_f$drop.list.single.group <- FALSE
-        args_f <- c(args_f, dots)
+        args_f <- c(args_f, rlang::dots_list(...))
         pred_ok <- tryCatch(
           suppressWarnings(do.call(lavaan::lavPredict, args_f)),
           error = function(e) { last_err <<- e; NULL }
@@ -382,9 +299,6 @@ lavPredict_parallel <- function(fit,
       if (diagnostics) attr(out_in, "fs_n_corrected") <- sum(flag)
       out_in
     })(out)
-
-    # Post-hoc transform on final LV scores (after any extreme-score correction), if requested
-    out <- .maybe_transform_out(out)
 
     if (!is_mg) return(out)
     if (return_type == "data") return(out)
@@ -433,8 +347,9 @@ lavPredict_parallel <- function(fit,
   on.exit(reset_plan(), add = TRUE)
 
   fopts <- list(append.data = TRUE, assemble = TRUE, method = method,
-                transform   = FALSE)
+                transform = TRUE)
   if (is_mg) fopts$drop.list.single.group <- FALSE
+  dots <- rlang::dots_list(...)
 
   pred_fun <- function(df_chunk) {
     pred <- do.call(lavaan::lavPredict, c(list(object = fit, newdata = df_chunk), fopts, dots))
@@ -542,9 +457,9 @@ lavPredict_parallel <- function(fit,
     pred_ok <- NULL; last_err <- NULL
     for (mth in try_methods) {
       args_f <- list(object = fit, newdata = nd, append.data = TRUE, assemble = TRUE, method = mth,
-                     transform   = FALSE)
+                     transform = TRUE)
       if (is_mg) args_f$drop.list.single.group <- FALSE
-      args_f <- c(args_f, dots)
+      args_f <- c(args_f, rlang::dots_list(...))
       pred_ok <- tryCatch(
         suppressWarnings(do.call(lavaan::lavPredict, args_f)),
         error = function(e) { last_err <<- e; NULL }
@@ -572,9 +487,6 @@ lavPredict_parallel <- function(fit,
     if (diagnostics) attr(out_in, "fs_n_corrected") <- sum(flag)
     out_in
   })(out_joined)
-
-  # Post-hoc transform on final LV scores (after any extreme-score correction), if requested
-  out_joined <- .maybe_transform_out(out_joined)
 
   if (!is_mg) return(out_joined)
   if (return_type == "data") return(out_joined)

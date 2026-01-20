@@ -62,9 +62,6 @@
 #' @seealso \link{item_data}, \link{augment}, \link{prepare}
 #' @family lavDiag-visualization
 #' @export
-#' Plot model-implied vs empirical item curves by latent factor (single- or multi-group)
-#'
-#' @export
 item_plot <- function(
     x,
     latent,
@@ -94,11 +91,10 @@ item_plot <- function(
     sort            = c("none","r2","r2_pen","rmse","rmse_pen","mae","mae_pen"),
     sort_dir        = c("auto","asc","desc")
 ) {
-  facet    <- match.arg(facet)
-  scales   <- match.arg(scales)
+  facet  <- match.arg(facet)
+  scales <- match.arg(scales)
   sort_dir <- match.arg(sort_dir)
-  sort     <- match.arg(sort)
-
+  sort <- match.arg(sort)
   stopifnot(is.null(jitter_seed) || (is.numeric(jitter_seed) && length(jitter_seed) == 1L && is.finite(jitter_seed)))
   if (!is.numeric(sample_frac) || length(sample_frac) != 1L || !is.finite(sample_frac) || sample_frac <= 0) sample_frac <- 1
   sample_frac <- min(sample_frac, 1)
@@ -108,93 +104,58 @@ item_plot <- function(
   orig <- x$original_data
   new  <- x$new_data
   mets <- x$metrics
-
   if (is.null(new)) stop("x$new_data is NULL.")
-  if (!latent %in% names(new)) stop(sprintf("Latent '%s' not found as a column in new_data.", latent))
-  if (!".latent_var" %in% names(new)) stop("new_data must contain .latent_var (from prepare()).")
+  if (!latent %in% names(new)) stop(sprintf("Latent '%s' not found in new_data.", latent))
 
-  # ---- metadata (meta-first, attribute fallback) ----
-  meta <- NULL
-  if ("meta" %in% names(x)) meta <- x$meta
-  if (is.null(meta)) meta <- attr(x, "lavdiag_item_meta", exact = TRUE)
-  if (is.null(meta)) stop("Missing metadata (x$meta or attr(x,'lavdiag_item_meta')). Re-run item_data() with updated version.")
-
-  # Prefixes for new_data prediction columns (no guessing)
-  pref_m <- meta$prefixes$new_data$model
-  pref_e <- meta$prefixes$new_data$empirical
-  if (is.null(pref_m) || is.null(pref_e)) stop("meta$prefixes$new_data is missing.")
-
-  # ---- default items: derive from stored loadings (no regex guessing) ----
+  # Infer item list from prediction columns if not supplied
   if (is.null(items)) {
-    loads <- meta$loads_overall
-    if (!is.list(loads)) stop("meta$loads_overall is missing or not a list.")
-    items <- names(loads)[vapply(loads, function(v) is.character(v) && latent %in% v, logical(1L))]
-
-    # If loadings vary by group, include items loading on latent in any group
-    if (isTRUE(meta$vary_by_group) && is.list(meta$loads_by_group)) {
-      any_g <- unique(unlist(lapply(meta$loads_by_group, function(li) {
-        if (!is.list(li)) return(character(0L))
-        nm <- names(li)
-        keep <- vapply(li, function(v) is.character(v) && latent %in% v, logical(1L))
-        nm[keep]
-      }), use.names = FALSE))
-      items <- unique(c(items, any_g))
-    }
-
-    if (!length(items)) stop("No items found for this latent in metadata (loads_overall/loads_by_group).")
+    rx <- paste0(
+      "^(?:m|e)_(?:est|lwr|upr)_([^_]+)_",
+      stringr::str_replace_all(latent, "([\\.^$|()\\[\\]{}*+?])", "\\\\\\1"),
+      "$")
+    cand  <- names(new)[stringr::str_detect(names(new), rx)]
+    items <- sort(unique(stats::na.omit(stringr::str_match(cand, rx)[, 2])))
+    if (!length(items)) stop("No <item>_<latent> prediction columns found in new_data for the requested latent.")
   }
-  items <- unique(as.character(items))
 
-  # ---- optional sort by metrics (mean across groups) ----
+  # Optional: sort items by a chosen metric (averaged across groups when present)
   if (!identical(sort, "none") && !is.null(mets) && nrow(mets)) {
     metric <- sort
     agg <- mets |>
       dplyr::filter(.data$item %in% items) |>
       dplyr::group_by(.data$item) |>
       dplyr::summarise(score = mean(.data[[metric]], na.rm = TRUE), .groups = "drop")
-
     auto_desc <- grepl("^r2", metric)
     dir <- switch(sort_dir, auto = if (auto_desc) "desc" else "asc", asc = "asc", desc = "desc")
     agg <- if (identical(dir, "desc")) dplyr::arrange(agg, dplyr::desc(.data$score)) else dplyr::arrange(agg, .data$score)
     items <- intersect(agg$item, items)
   }
 
-  # Only rows where the requested latent is the x-axis varied factor
-  new_lat <- dplyr::filter(new, .data$.latent_var == latent)
-  if (!nrow(new_lat)) stop("No rows for the requested latent (.latent_var == latent).")
+  new_lat <- dplyr::filter(new, .data$.latent_var %in% latent)
+  if (!nrow(new_lat)) stop("No rows for the requested latent.")
 
-  core_cols <- intersect(c(".rid", ".gid", ".group", ".latent_var"), names(new_lat))
-  x_vec <- new_lat[[latent]]
+  escaped_lat <- stringr::str_replace_all(latent, "([\\.^$|()\\[\\]{}*+?])", "\\\\\\1")
+  cols_rx  <- paste0("^(?:m|e)_(?:est|lwr|upr)_[^_]+_", escaped_lat, "$")
+  name_rx  <- paste0("^(m|e)_(est|lwr|upr)_([^_]+)_", escaped_lat, "$")
 
-  # Helper to build expected column names using prefixes from metadata
-  col_nm <- function(pref, stat, item, lat) {
-    # pref is named vector c(est=..., lwr=..., upr=...)
-    paste0(pref[[stat]], item, "_", lat)
-  }
+  core_cols <- c(".rid", ".gid", ".group", ".latent_var")
+  pred_cols <- grep(cols_rx, names(new_lat), value = TRUE, perl = TRUE)
+  if (!length(pred_cols)) stop("No prediction columns found for the chosen latent in new_data.")
 
-  # ---- build curves deterministically (no regex parsing) ----
-  curves <- dplyr::bind_rows(lapply(items, function(it) {
-    m_est <- m_lwr <- m_upr <- e_est <- e_lwr <- e_upr <- rep(NA_real_, nrow(new_lat))
-
-    if (isTRUE(show_model)) {
-      cn <- col_nm(pref_m, "est", it, latent); if (cn %in% names(new_lat)) m_est <- as.numeric(new_lat[[cn]])
-      cn <- col_nm(pref_m, "lwr", it, latent); if (cn %in% names(new_lat)) m_lwr <- as.numeric(new_lat[[cn]])
-      cn <- col_nm(pref_m, "upr", it, latent); if (cn %in% names(new_lat)) m_upr <- as.numeric(new_lat[[cn]])
-    }
-    if (isTRUE(show_empirical)) {
-      cn <- col_nm(pref_e, "est", it, latent); if (cn %in% names(new_lat)) e_est <- as.numeric(new_lat[[cn]])
-      cn <- col_nm(pref_e, "lwr", it, latent); if (cn %in% names(new_lat)) e_lwr <- as.numeric(new_lat[[cn]])
-      cn <- col_nm(pref_e, "upr", it, latent); if (cn %in% names(new_lat)) e_upr <- as.numeric(new_lat[[cn]])
-    }
-
-    tibble::tibble(
-      !!!new_lat[, core_cols, drop = FALSE],
-      x     = x_vec,
-      item  = it,
-      m_est = m_est, m_lwr = m_lwr, m_upr = m_upr,
-      e_est = e_est, e_lwr = e_lwr, e_upr = e_upr
-    )
-  })) |>
+  curves <- new_lat |>
+    dplyr::mutate(x = .data[[latent]]) |>
+    dplyr::select(dplyr::any_of(c(core_cols, "x")), tidyselect::all_of(pred_cols)) |>
+    tidyr::pivot_longer(
+      cols = tidyselect::all_of(pred_cols),
+      names_to = c("src", "stat", "item"),
+      names_pattern = name_rx,
+      values_to = "val"
+    ) |>
+    tidyr::pivot_wider(
+      names_from  = c("src", "stat"),
+      values_from = "val",
+      names_glue  = "{src}_{stat}"
+    ) |>
     dplyr::mutate(
       .group = dplyr::if_else(is.na(.data$.group) & is.finite(.data$.gid), as.character(.data$.gid), .data$.group)
     )
@@ -204,20 +165,23 @@ item_plot <- function(
     if (length(ug) <= 1L) curves$.group <- NULL
   }
 
-  curves$item <- factor(curves$item, levels = items)
+  # Apply item ordering to plotting data if requested
+  if (length(items) && "item" %in% names(curves)) {
+    curves$item <- factor(curves$item, levels = items)
+  }
 
-  # ---- raw points ----
   keep_items <- intersect(items, names(orig))
   if (length(keep_items) == 0L) show_points <- FALSE
 
-  pts_long <- NULL
+  # Prepare raw points (optionally stratified thinning and safe jitter for ordinal)
   if (isTRUE(show_points)) {
     pts_long <- orig |>
       dplyr::select(dplyr::any_of(c(".gid", ".group", latent, keep_items))) |>
       tidyr::pivot_longer(cols = tidyselect::all_of(keep_items), names_to = "item", values_to = "y") |>
-      dplyr::mutate(item = factor(.data$item, levels = items))
+      dplyr::mutate(item = if (length(items)) factor(.data$item, levels = items) else .data$item)
 
     if (sample_frac < 1 && nrow(pts_long) > 0) {
+      # Stratified thinning to preserve balance across .group × item (and .gid if available)
       grp_vars <- intersect(c(".gid", ".group", "item"), names(pts_long))
       pts_long <- pts_long |>
         dplyr::group_by(dplyr::across(tidyselect::all_of(grp_vars))) |>
@@ -231,7 +195,7 @@ item_plot <- function(
       pts_long <- dplyr::left_join(pts_long, map_tbl, by = ".gid")
     }
 
-    # Safe numeric jitter (handles ordered factors) with ±3·SD truncation
+    # Safe numeric jitter (handles ordered factors) with ±3·SD truncation, RNG-local
     jitter_draw <- function(n, sd) {
       eps <- stats::rnorm(n, sd = sd)
       lim <- 3 * sd
@@ -239,13 +203,18 @@ item_plot <- function(
       eps
     }
 
-    y_num <- if (is.numeric(pts_long$y)) pts_long$y else as.numeric(pts_long$y)
-    eps <- if (!is.null(jitter_seed)) withr::with_seed(jitter_seed, jitter_draw(nrow(pts_long), jitter_sd)) else jitter_draw(nrow(pts_long), jitter_sd)
-    pts_long$y_jit <- y_num + eps
+    if (nrow(pts_long) > 0) {
+      y_num <- if (is.numeric(pts_long$y)) pts_long$y else as.numeric(pts_long$y)
+      eps <- if (!is.null(jitter_seed)) withr::with_seed(jitter_seed, jitter_draw(nrow(pts_long), jitter_sd)) else jitter_draw(nrow(pts_long), jitter_sd)
+      pts_long$y_jit <- y_num + eps
+    } else {
+      pts_long$y_jit <- numeric(0)
+    }
+  } else {
+    pts_long <- NULL
   }
 
-  # ---- plot ----
-  p <- ggplot2::ggplot(curves, ggplot2::aes(x = .data$x))
+  p <- ggplot2::ggplot(curves, ggplot2::aes(x = x))
 
   if (isTRUE(show_points) && !is.null(pts_long) && nrow(pts_long) > 0) {
     p <- p + ggplot2::geom_point(
@@ -254,54 +223,35 @@ item_plot <- function(
       inherit.aes = FALSE,
       color = color_points,
       alpha = alpha_points,
-      size  = point_size,
+      size = point_size,
       shape = point_shape,
-      show.legend = FALSE
+      show.legend = FALSE,
+      position = ggplot2::position_identity()
     )
   }
 
   if (isTRUE(show_model)) {
-    if (isTRUE(ribbons) && any(!is.na(curves$m_lwr))) {
-      p <- p + ggplot2::geom_ribbon(
-        ggplot2::aes(ymin = .data$m_lwr, ymax = .data$m_upr, fill = "Model"),
-        alpha = alpha_ribbon
-      )
-    }
+    if (isTRUE(ribbons) && any(!is.na(curves$m_lwr)))
+      p <- p + ggplot2::geom_ribbon(ggplot2::aes(ymin = .data$m_lwr, ymax = .data$m_upr, fill = "Model"), alpha = alpha_ribbon)
     p <- p + ggplot2::geom_line(ggplot2::aes(y = .data$m_est, color = "Model"), linewidth = line_width)
   }
 
   if (isTRUE(show_empirical)) {
-    if (isTRUE(ribbons) && any(!is.na(curves$e_lwr))) {
-      p <- p + ggplot2::geom_ribbon(
-        ggplot2::aes(ymin = .data$e_lwr, ymax = .data$e_upr, fill = "Empirical"),
-        alpha = alpha_ribbon
-      )
-    }
+    if (isTRUE(ribbons) && any(!is.na(curves$e_lwr)))
+      p <- p + ggplot2::geom_ribbon(ggplot2::aes(ymin = .data$e_lwr, ymax = .data$e_upr, fill = "Empirical"), alpha = alpha_ribbon)
     p <- p + ggplot2::geom_line(ggplot2::aes(y = .data$e_est, color = "Empirical"), linewidth = line_width)
   }
 
-  # ---- Fit metric annotations (R², RMSE, MAE) ----
-  ann <- NULL
-  if (isTRUE(show_metrics) && !is.null(mets) && nrow(mets) > 0) {
-
+  if (isTRUE(show_metrics) && !is.null(mets) && nrow(mets)) {
     met_cols <- if (isTRUE(penalized)) c("r2_pen", "rmse_pen", "mae_pen") else c("r2", "rmse", "mae")
-
-    # Keep only what we need and format numbers; IMPORTANT: keep "NA" as text so cap isn't NA
     lab_tbl <- mets |>
       dplyr::filter(.data$item %in% items) |>
-      dplyr::select(dplyr::any_of(c(".gid", ".group", "item", met_cols))) |>
-      dplyr::mutate(dplyr::across(dplyr::all_of(met_cols), ~ ifelse(is.na(.x), "NA", sprintf("%.3f", .x))))
-
-    # x position for the label within each facet (midpoint of x range in curves)
-    x_mid_tbl <- curves |>
-      dplyr::group_by(dplyr::across(dplyr::any_of(c(".gid", ".group", "item")))) |>
-      dplyr::summarise(x_mid = mean(range(.data$x, na.rm = TRUE)), .groups = "drop")
-
-    ann <- dplyr::left_join(lab_tbl, x_mid_tbl, by = intersect(names(lab_tbl), names(x_mid_tbl)))
-
-    # Build plotmath label (parse=TRUE)
-    ann <- ann |>
-      dplyr::mutate(
+      dplyr::mutate(dplyr::across(dplyr::all_of(met_cols),
+                                  ~ ifelse(is.na(.x), NA_character_, sprintf("%.3f", .x))) ) |>
+      dplyr::transmute(
+        .gid = .data$.gid,
+        .group = .data$.group,
+        item = .data$item,
         cap = paste0(
           "italic(R)^2*\" = ", .data$r2, "\"*\", \"~",
           "plain(\"RMSE\")*\" = ", .data$rmse, "\"*\", \"~",
@@ -309,41 +259,61 @@ item_plot <- function(
         )
       )
 
-    # Safety: drop rows where x_mid missing
-    ann <- ann[is.finite(ann$x_mid), , drop = FALSE]
-  }
-
-
-  # Faceting
-  if (".group" %in% names(curves)) {
-    p <- p + ggplot2::facet_grid(rows = ggplot2::vars(.data$item), cols = ggplot2::vars(.data$.group), scales = scales)
-  } else {
-    if (identical(facet, "grid")) {
-      p <- p + ggplot2::facet_grid(rows = ggplot2::vars(.data$item), cols = ggplot2::vars(.data$.latent_var), scales = scales)
+    if (".group" %in% names(curves)) {
+      xr  <- curves |>
+        dplyr::group_by(.data$.group, .data$item) |>
+        dplyr::summarise(x_mid = stats::median(.data$x, na.rm = TRUE), .groups = "drop")
+      ann <- dplyr::left_join(lab_tbl, xr, by = c(".group" = ".group", "item" = "item"))
     } else {
-      p <- p + ggplot2::facet_wrap(ggplot2::vars(.data$item), ncol = ncol, nrow = nrow, scales = scales)
+      xr  <- curves |>
+        dplyr::group_by(.data$item) |>
+        dplyr::summarise(x_mid = stats::median(.data$x, na.rm = TRUE), .groups = "drop")
+      ann <- dplyr::left_join(lab_tbl, xr, by = dplyr::join_by(item))
     }
-  }
 
-  if (!is.null(ann) && nrow(ann) > 0) {
     p <- p + ggplot2::geom_text(
       data = ann,
       ggplot2::aes(x = .data$x_mid, y = Inf, label = .data$cap),
+      parse = TRUE,
       inherit.aes = FALSE,
-      vjust = 1.15,
-      size  = 3.2,
-      parse = TRUE
-    )
+      hjust = 0.5,
+      vjust = 1.3
+    ) + ggplot2::coord_cartesian(clip = "off")
   }
 
+  # Compute dynamic top padding: add `metrics_pad` only when metrics are drawn
+  top_pad <- if (isTRUE(show_metrics) && !is.null(mets) && nrow(mets)) 0.15 + metrics_pad else 0.05
+
   p <- p +
-    ggplot2::scale_color_manual(values = c(Model = color_model, Empirical = color_empirical)) +
-    ggplot2::scale_fill_manual(values  = c(Model = color_model, Empirical = color_empirical)) +
-    ggplot2::labs(x = latent, y = "Item prediction", color = NULL, fill = NULL)
+    ggplot2::scale_color_manual(name = "Predictions",
+                                values = c(Model = color_model, Empirical = color_empirical),
+                                breaks = c("Model","Empirical"),
+                                limits = c("Model","Empirical")) +
+    ggplot2::scale_fill_manual(name = "Predictions",
+                               values = c(Model = color_model, Empirical = color_empirical),
+                               breaks = c("Model","Empirical"),
+                               limits = c("Model","Empirical")) +
+    ggplot2::labs(x = latent, y = NULL) +
+    ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0.05, top_pad))) +
+    ggplot2::theme(legend.position = "top",
+                   plot.margin = ggplot2::margin(10, 10, 20, 10))
 
-  p
+  if (".group" %in% names(curves)) {
+    p <- p + ggplot2::facet_grid(rows = ggplot2::vars(!!rlang::sym("item")), cols = ggplot2::vars(!!rlang::sym(".group")), scales = scales)
+  } else {
+    if (identical(facet, "grid")) {
+      p <- p + ggplot2::facet_grid(rows = ggplot2::vars(!!rlang::sym("item")), scales = scales)
+    } else {
+      if (is.null(ncol) && is.null(nrow)) {
+        n_items <- length(unique(curves$item))
+        ncol <- ceiling(sqrt(n_items))
+      }
+      p <- p + ggplot2::facet_wrap(ggplot2::vars(!!rlang::sym("item")), scales = scales, ncol = ncol, nrow = nrow)
+    }
+  }
+
+  return(p)
 }
-
 
 utils::globalVariables(c(".group", "item"))
 
