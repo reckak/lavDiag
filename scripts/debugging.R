@@ -25,7 +25,7 @@ fit1 <- lavaan::cfa(model = m,
             missing = "pairwise",
             # group = "gender",
             meanstructure = T,
-            ordered = F)
+            ordered = ord)
 
 fit2 <- lavaan::cfa(model = m,
                     data = df,
@@ -70,15 +70,34 @@ hopper_plot(fit3)
 lavPredict_parallel(fit2)
 lavPredict_parallel(fit3)
 
-sg1 <- item_data(fit1) # single group model
-sg2 <- item_data(fit2) # single group model
+sg1 <- item_data(fit1, fam_cont = "ocat") # single group model
+sg2 <- item_data(fit2, fam_cont = "ocat") # single group model
 
+summar
+
+
+
+summary(sg1$original_data)
+
+attr(sg2, "lavdiag_item_meta")
+item_plot(sg1,
+          latent = "A")
+item_plot(sg1,
+          latent = "E")
 
 item_plot(sg1, latent = "E",
           sort = "r2",
           jitter_seed = 333)
+
+sg1$new_data %>% summary()
+
+is.null(attr(sg2, "lavdiag_item_meta", exact = TRUE))
+is.null(attr(sg2$original_data, "lavdiag_item_meta", exact = TRUE))
+is.null(attr(sg2$new_data, "lavdiag_item_meta", exact = TRUE))
+
 item_plot(sg1, latent = "A",
           sort = "r2",
+          items = "A1",
           jitter_seed = 333)
 item_plot(sg2, latent = "E",
           sort = "r2",

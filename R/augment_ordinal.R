@@ -130,6 +130,7 @@
     }
     list(lambda = lam_g, nu = nu_g)
   }
+
   get_tau_for <- function(th_vec, j) {
     nm <- names(th_vec)
     if (is.null(nm)) return(numeric(0))
@@ -140,6 +141,7 @@
     idx[is.na(idx)] <- seq_along(tau)
     tau[order(idx)]
   }
+
   levels_for_item <- function(df, th_vec, j) {
     if (!is.null(df) && j %in% names(df)) {
       yo <- df[[j]]
